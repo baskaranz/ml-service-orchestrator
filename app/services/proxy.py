@@ -4,65 +4,128 @@ Proxy service for forwarding requests to model endpoints.
 
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, Request, Response
+from fastapi import HTTPException, Request, Response, Depends
+from httpx import Response
+import json
+from starlette.responses import Response as StarletteResponse
 
-from app.core.exceptions import ModelRequestError
 from app.models.config_models import ModelConfig
-from app.core.orchestrator import Orchestrator
-from app.services.model_registry import ModelRegistryService, get_model_registry_service
+from app.utils.http import HttpClient
 from app.utils.logging import get_logger
-from app.utils.http import HTTPClient
+from app.core.exceptions import ModelRequestError, CircuitBreakerError
+from app.services.model_registry import ModelRegistryService, get_model_registry_service
+from app.services.orchestrator import Orchestrator
 
 logger = get_logger(__name__)
-
 
 class ProxyService:
     """
     Service for proxying requests to model endpoints.
+    
+    This class is responsible for:
+    1. Managing HTTP clients for each model
+    2. Forwarding requests to model endpoints
+    3. Handling authentication and headers
     """
     
     def __init__(
         self,
-        model_registry: ModelRegistryService,
-        orchestrator: Orchestrator
+        model_registry: Optional[ModelRegistryService] = None,
+        orchestrator: Optional[Orchestrator] = None
     ):
+        """Initialize the proxy service."""
+        self.model_registry = model_registry or get_model_registry_service()
+        self.orchestrator = orchestrator or Orchestrator()
+        self._clients: Dict[str, HttpClient] = {}
+    
+    def _get_client(self, model_config: ModelConfig) -> HttpClient:
         """
-        Initialize the proxy service.
+        Get or create an HTTP client for a model.
         
         Args:
-            model_registry: Model registry service
-            orchestrator: Orchestrator for request routing
+            model_config: Model configuration
+            
+        Returns:
+            HTTP client instance
         """
-        self.model_registry = model_registry
-        self.orchestrator = orchestrator
+        if model_config.id not in self._clients:
+            client = HttpClient(
+                timeout=model_config.timeout,
+                max_retries=model_config.max_retries
+            )
+            self._clients[model_config.id] = client
+            
+        return self._clients[model_config.id]
     
-    async def proxy_to_model(
+    async def forward_request(
         self,
-        model_id: str,
-        request: Request,
-        path_suffix: str = ""
-    ) -> Response:
+        model_config: ModelConfig,
+        request_data: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Forward a request to a model endpoint.
+        
+        Args:
+            model_config: Model configuration
+            request_data: Request data
+            headers: Request headers
+            
+        Returns:
+            Model response
+            
+        Raises:
+            HTTPException: If the request fails
+        """
+        client = self._get_client(model_config)
+        
+        try:
+            # Merge model headers with request headers
+            all_headers = {**model_config.headers}
+            if headers:
+                all_headers.update(headers)
+            
+            # Make the request
+            status_code, response_json, response_headers = await client.request(
+                method="POST",
+                url=model_config.endpoint_url,
+                headers=all_headers,
+                json_data=request_data,
+                params=None
+            )
+            
+            return response_json
+            
+        except Exception as e:
+            logger.error(f"Error forwarding request to model {model_config.id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error forwarding request to model {model_config.id}"
+            )
+
+    async def proxy_to_model(self, model_id: str, request: Request, path_suffix: str = "") -> StarletteResponse:
         """
         Proxy a request to a model endpoint.
         
         Args:
-            model_id: Model ID
-            request: Original FastAPI request
-            path_suffix: Additional path to append to the model endpoint URL
+            model_id: ID of the model to proxy to
+            request: The incoming request
+            path_suffix: Optional path suffix to append to the model's endpoint URL
             
         Returns:
             Response from the model endpoint
+            
+        Raises:
+            ModelRequestError: If the request fails
+            CircuitBreakerError: If the circuit breaker is open
         """
-        logger.info(
-            f"Proxying request to model: {model_id}",
-            extra={"path": request.url.path, "method": request.method}
-        )
+        logger.info(f"Proxying request to model: {model_id}")
         
         try:
-            # Get the model configuration
+            # Get model config
             model_config = self.model_registry.get_model_config(model_id)
             
-            # Proxy the request through the orchestrator
+            # Forward request to orchestrator
             response = await self.orchestrator.proxy_request(
                 model_config=model_config,
                 request=request,
@@ -71,31 +134,22 @@ class ProxyService:
             
             return response
             
-        except ModelRequestError:
-            # Re-raise to use the proper exception handler
-            raise
-            
-        except Exception as e:
-            logger.error(f"Error proxying request to model '{model_id}': {str(e)}", exc_info=True)
+        except CircuitBreakerError as e:
+            logger.error(f"Circuit breaker error for model {model_id}: {str(e)}")
             raise ModelRequestError(
-                message=f"Error proxying request: {str(e)}",
-                status_code=500,
+                message=f"circuit breaker is open for model {model_id}",
+                model_id=model_id
+            )
+        except ModelRequestError as e:
+            logger.error(f"Error proxying request to model '{model_id}': {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error proxying request to model '{model_id}': {str(e)}")
+            raise ModelRequestError(
+                message=str(e),
                 model_id=model_id
             )
 
-
-def get_proxy_service(
-    model_registry: ModelRegistryService = Depends(get_model_registry_service),
-    orchestrator: Orchestrator = Depends(lambda: Orchestrator())
-) -> ProxyService:
-    """
-    Dependency for getting the proxy service.
-    
-    Args:
-        model_registry: Model registry service
-        orchestrator: Orchestrator instance
-        
-    Returns:
-        Proxy service
-    """
-    return ProxyService(model_registry, orchestrator)
+def get_proxy_service() -> ProxyService:
+    """Get the proxy service instance."""
+    return ProxyService()

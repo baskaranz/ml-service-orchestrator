@@ -5,6 +5,7 @@ Admin API routers for managing model configurations.
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 
 from app.api.dependencies import get_api_key
 from app.models.config_models import ModelConfig
@@ -68,7 +69,12 @@ async def get_model(
     Returns:
         Model configuration
     """
-    return model_registry.get_model_config(model_id)
+    try:
+        return model_registry.get_model_config(model_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail={"error": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
 @router.post(
@@ -92,7 +98,14 @@ async def add_model(
     Returns:
         Created model configuration
     """
-    return model_registry.add_model(request.model)
+    if request.model.id is None:
+        raise HTTPException(status_code=400, detail={"error": "Model ID must not be None"})
+    try:
+        return await model_registry.add_model(request.model.id, request.model)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail={"error": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
 @router.put(
@@ -120,10 +133,14 @@ async def update_model(
     if request.model.id != model_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Model ID mismatch: {request.model.id} != {model_id}"
+            detail={"error": f"Model ID mismatch: {request.model.id} != {model_id}"}
         )
-        
-    return model_registry.update_model(model_id, request.model)
+    try:
+        return await model_registry.update_model(model_id, request.model)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail={"error": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
 @router.delete(
@@ -143,7 +160,12 @@ async def delete_model(
         model_id: Model ID
         model_registry: Model registry service
     """
-    model_registry.delete_model(model_id)
+    try:
+        await model_registry.delete_model(model_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail={"error": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
 @router.post(
@@ -164,9 +186,11 @@ async def reload_configs(
     Returns:
         Status message
     """
-    models = await model_registry.reload_configs()
-    
-    return {
-        "status": "success",
-        "message": f"Reloaded {len(models)} model configurations"
-    }
+    try:
+        models = await model_registry.reload_configs()
+        return {
+            "status": "success",
+            "message": f"Reloaded {len(models)} model configurations"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})

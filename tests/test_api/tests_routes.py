@@ -6,8 +6,9 @@ import json
 import pytest
 from fastapi import Response
 from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
-from app.core.models import ModelSummary
+from app.schemas.api_models import ModelSummary
 
 
 def test_health_endpoint(client: TestClient):

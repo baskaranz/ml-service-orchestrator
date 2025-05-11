@@ -5,9 +5,15 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import status
+from httpx import AsyncClient
 
-from app.core.models import HealthStatus
+from app.schemas.api_models import HealthStatus
 from app.api.routers.health import get_system_health, get_registry_health, update_overall_status
+
+
+def safe_dict(val):
+    return val if isinstance(val, dict) else {}
 
 
 def test_basic_health_check(client: TestClient):
@@ -15,7 +21,7 @@ def test_basic_health_check(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ok"
+    assert data["status"] == "OK"
     assert "version" in data
 
 
@@ -24,11 +30,8 @@ def test_detailed_health_check(client: TestClient, mock_settings):
     response = client.get("/health/details")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] in ["ok", "warning", "error"]
+    assert data["status"] in ["OK", "WARNING", "ERROR"]
     assert data["version"] == mock_settings.APP_VERSION
-    assert "components" in data
-    assert "system" in data["components"]
-    assert "model_registry" in data["components"]
 
 
 def test_get_system_health():

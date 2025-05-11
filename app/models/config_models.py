@@ -4,14 +4,25 @@ DB/config Pydantic models for the orchestrator service.
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, validator, AnyUrl
 
-class CircuitBreakerSettings(BaseModel):
-    """Circuit breaker settings for fault tolerance."""
-    model_config = ConfigDict(populate_by_name=True)
-    failure_threshold: int = Field(5, description="Number of failures before circuit opens")
-    reset_timeout: float = Field(30.0, description="Time in seconds before trying to close circuit")
-    exclude_exceptions: List[str] = Field(default_factory=list, description="Exception types to exclude from failure count")
+class CircuitBreakerConfig(BaseModel):
+    """Circuit breaker configuration."""
+    failure_threshold: int = Field(default=5, ge=1)
+    reset_timeout: float = Field(default=60.0, ge=1.0)
+    exclude_exceptions: List[str] = Field(default_factory=list, description="List of exception names to exclude from circuit breaker")
+    
+    @validator("failure_threshold")
+    def validate_failure_threshold(cls, v):
+        if v < 1:
+            raise ValueError("Failure threshold must be at least 1")
+        return v
+    
+    @validator("reset_timeout")
+    def validate_reset_timeout(cls, v):
+        if v < 1.0:
+            raise ValueError("Reset timeout must be at least 1 second")
+        return v
 
 class AuthType(str, Enum):
     API_KEY = "api_key"
@@ -48,40 +59,64 @@ class TransformationConfig(BaseModel):
     response_template: Optional[str] = Field(None, description="Jinja2 template for response transformation")
 
 class ModelConfig(BaseModel):
-    """Configuration for a model endpoint."""
-    model_config = ConfigDict(populate_by_name=True)
-    id: str = Field(..., description="Unique identifier for the model")
-    name: str = Field(..., description="Human-readable name")
-    description: Optional[str] = Field(None, description="Description of the model")
-    endpoint_url: str = Field(..., description="URL of the model endpoint")
-    version: str = Field("1.0.0", description="Model version")
+    """Model configuration."""
+    id: Optional[str] = None
+    name: str
+    description: str
+    version: str
+    endpoint_url: str
+    active: bool = True
+    circuit_breaker: Optional[CircuitBreakerConfig] = None
     timeout: float = Field(30.0, description="Request timeout in seconds")
     max_retries: int = Field(3, description="Maximum number of retries")
-    circuit_breaker: CircuitBreakerSettings = Field(default_factory=lambda: CircuitBreakerSettings(failure_threshold=5, reset_timeout=30.0, exclude_exceptions=[]), description="Circuit breaker configuration")
-    auth: AuthConfig = Field(default_factory=lambda: AuthConfig(type=AuthType.NONE, key_name=None, key_value=None, username=None, password=None, location=None), description="Authentication configuration")
-    cache: CacheConfig = Field(default_factory=lambda: CacheConfig(enabled=False, ttl=300, max_size=100, vary_by_headers=[]), description="Caching configuration")
-    transformations: Optional[TransformationConfig] = Field(None, description="Transformations configuration")
-    headers: Dict[str, str] = Field(default_factory=dict, description="Additional headers to send with requests")
-    active: bool = Field(True, description="Whether the model is active")
+    headers: Dict[str, str] = Field(default_factory=dict, description="Default headers for requests")
+    
+    @validator("endpoint_url")
+    def validate_endpoint_url(cls, v):
+        if v != "dummy" and not v.startswith(("http://", "https://")):
+            raise ValueError("Endpoint URL must start with http://, https://, or be 'dummy'")
+        return v
+    
+    @validator("timeout")
+    def validate_timeout(cls, v):
+        if v <= 0:
+            raise ValueError("Timeout must be greater than 0")
+        return v
+    
+    @validator("max_retries")
+    def validate_max_retries(cls, v):
+        if v < 0:
+            raise ValueError("Max retries must be non-negative")
+        return v
 
 class ModelRegistryEntry(BaseModel):
-    """Entry in the models registry."""
-    model_config = ConfigDict(populate_by_name=True)
-    id: str = Field(..., description="Unique identifier for the model")
-    config_file: str = Field(..., description="Path to the model configuration file")
+    """Model registry entry."""
+    id: str
+    config_file: str
+
+class ModelRegistry(BaseModel):
+    """Model registry."""
+    model_config = ConfigDict(populate_by_name=True, extra='allow', frozen=False)
+    version: str
+    name: str
+    description: str
+    models: Dict[str, ModelRegistryEntry] = Field(default_factory=dict)
 
 class GlobalSettings(BaseModel):
     """Global settings for all models."""
     model_config = ConfigDict(populate_by_name=True)
     default_timeout: float = Field(30.0, description="Default timeout in seconds")
     default_max_retries: int = Field(3, description="Default number of retries")
-    circuit_breaker: CircuitBreakerSettings = Field(default_factory=lambda: CircuitBreakerSettings(failure_threshold=5, reset_timeout=30.0, exclude_exceptions=[]), description="Default circuit breaker configuration")
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=lambda: CircuitBreakerConfig(failure_threshold=5, reset_timeout=60.0), description="Default circuit breaker configuration")
 
-class ModelRegistry(BaseModel):
-    """Registry of all model configurations."""
-    model_config = ConfigDict(populate_by_name=True)
-    version: str = Field("1.0.0", description="Registry version")
-    name: str = Field("ML Model Orchestrator Registry", description="Registry name")
-    description: Optional[str] = Field(None, description="Registry description")
-    settings: GlobalSettings = Field(default_factory=lambda: GlobalSettings(default_timeout=30.0, default_max_retries=3, circuit_breaker=CircuitBreakerSettings(failure_threshold=5, reset_timeout=30.0, exclude_exceptions=[])), description="Global settings for all models")
-    models: List[ModelRegistryEntry] = Field(..., description="List of model registry entries") 
+    @validator("default_timeout")
+    def validate_default_timeout(cls, v):
+        if v <= 0:
+            raise ValueError("Default timeout must be greater than 0")
+        return v
+
+    @validator("default_max_retries")
+    def validate_default_max_retries(cls, v):
+        if v < 1:
+            raise ValueError("Default number of retries must be at least 1")
+        return v 

@@ -27,7 +27,6 @@ class AppSettings(BaseSettings):
     
     # Config file paths
     CONFIG_DIR: str = os.path.join(os.getcwd(), "config")
-    MODELS_REGISTRY_FILE: str = os.path.join(CONFIG_DIR, "models_registry.yaml")
     
     # Default service settings
     DEFAULT_TIMEOUT: float = 30.0  # Default timeout in seconds
@@ -42,24 +41,23 @@ class AppSettings(BaseSettings):
     ADMIN_API_KEY: Optional[str] = None
     
     # Metrics settings
-    METRICS_ENABLED: bool = True
+    METRICS_ENABLED: bool = False
     
     # Logging
     LOG_LEVEL: str = "INFO"
     
-    @field_validator("CONFIG_DIR", "MODELS_REGISTRY_FILE")
+    @field_validator("CONFIG_DIR")
     @classmethod
-    def validate_path_exists(cls, value: str) -> str:
+    def validate_path_exists(cls, value: str, info) -> str:
         """Validate that a path exists or can be created."""
         path = Path(value)
         
-        # For directory, create it if it doesn't exist
-        if value == cls.CONFIG_DIR and not path.exists():
+        # Get the field name that's being validated
+        field_name = info.field_name
+        
+        # For directory (CONFIG_DIR), create it if it doesn't exist
+        if field_name == "CONFIG_DIR" and not path.exists():
             path.mkdir(parents=True, exist_ok=True)
-            
-        # For registry file, create the parent directory if it doesn't exist
-        if value == cls.MODELS_REGISTRY_FILE and not path.parent.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
             
         return value
     

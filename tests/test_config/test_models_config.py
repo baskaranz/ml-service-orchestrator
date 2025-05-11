@@ -8,8 +8,8 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 import yaml
 
+from app.models.config_models import ModelConfig, ModelRegistry
 from app.config.models_config import ModelConfigManager
-from app.core.models import ModelConfig, ModelRegistry
 
 
 @pytest.mark.asyncio
@@ -224,7 +224,7 @@ async def test_update_model_config(mock_config_manager, model_config_instance):
         "description": "This model was updated"
     })
     
-    # Mock registry entry
+    # Mock registry entry as a list
     mock_entry = MagicMock()
     mock_entry.id = "test_model_1"
     mock_entry.config_file = "models/test_model_1.yaml"
@@ -274,7 +274,7 @@ async def test_delete_model_config(mock_config_manager):
     # First load configurations
     registry, _ = await mock_config_manager.load_configs()
     
-    # Mock registry entry for test_model_1
+    # Mock registry entry for test_model_1 as a list
     mock_entry = MagicMock()
     mock_entry.id = "test_model_1"
     mock_entry.config_file = "models/test_model_1.yaml"
@@ -303,3 +303,30 @@ async def test_delete_model_config_not_found(mock_config_manager):
     # Try to delete a non-existent model
     with pytest.raises(Exception):
         mock_config_manager.delete_model_config("nonexistent_model")
+
+# Example for test_models_registry and similar mocks:
+test_models_registry = {
+    "version": "1.0.0",
+    "name": "Test Registry",
+    "models": [
+        {
+            "id": "test_model_1",
+            "config_file": "models/test_model_1.yaml"
+        },
+        {
+            "id": "test_model_2",
+            "config_file": "models/test_model_2.yaml"
+        }
+    ]
+}
+
+# Ensure all registry mocks use list for 'models'
+# Example for registry_dict and similar mocks:
+registry_dict = {
+    "version": "1.0.0",
+    "name": "Test Registry",
+    "models": [
+        {"id": "good_model", "config_file": "models/good.yaml"},
+        {"id": "error_model", "config_file": "models/error.yaml"}
+    ]
+}

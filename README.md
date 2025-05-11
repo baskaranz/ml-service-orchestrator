@@ -1,369 +1,204 @@
-# ML Orchestrator Service
+# Service Orchestrator
 
-A YAML config-driven FastAPI orchestrator service for ML model endpoints.
+A flexible and robust service orchestrator that provides unified access, monitoring, and management capabilities for various services including ML models, databases, and external APIs.
 
-![Test Coverage](https://img.shields.io/badge/coverage-79%25-yellow)
-![Python Version](https://img.shields.io/badge/python-3.11+-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104.0-green)
+## Features
 
-## Project Overview
-
-This service acts as a centralized API gateway for multiple machine learning model endpoints. It dynamically routes requests to the appropriate model APIs based on YAML configuration, supporting zero-downtime updates through configuration hot-reloading.
-
-## Key Features
-
-- **Dynamic Routing**: Route requests to different model endpoints based on URL path
-- **Zero-Downtime Updates**: Add or modify model endpoints without service restart
-- **Configuration-Driven**: YAML-based configuration for model endpoints
-- **Request Proxying**: Forward requests to model endpoints with proper error handling
-- **Circuit Breaking**: Fault tolerance with circuit breaker pattern
-- **Admin API**: Management endpoints for model configurations
-- **Health Monitoring**: Comprehensive health checks and metrics
+- **Unified API Gateway**: Single entry point for all your services
+- **Dynamic Service Registration**: Add or remove services without restart
+- **Circuit Breaker**: Automatic failure detection and recovery
+- **Request/Response Transformation**: Transform data between different service formats
+- **Health Monitoring**: Real-time health checks for all services
+- **Authentication**: Flexible authentication mechanisms per service
+- **Caching**: Optional response caching with configurable TTL
+- **Metrics & Logging**: Comprehensive monitoring and debugging
+- **Data Integration**: Connect to databases and external APIs
+- **Service Composition**: Combine multiple services into unified workflows
 
 ## Quick Start
 
-### Using Docker
+1. **Installation**:
 
 ```bash
-# Build and run with Docker
-docker build -t ml-orchestrator .
-docker run -p 8000:8000 ml-orchestrator
-```
+# Clone the repository
+git clone <repository-url>
+cd service-orchestrator
 
-### Using Development Environment
-
-```bash
-# Setup development environment
+# Set up development environment
 ./scripts/setup_dev.sh
 
 # Activate virtual environment
 source venv/bin/activate
-
-# Run the service
-make run
 ```
 
-### Using our Development CLI
+2. **Running Dummy Models**:
+
+The orchestrator comes with a set of dummy model servers for testing. To start them:
 
 ```bash
-# Run the service
-./scripts/dev_cli.py run
-
-# Run tests with coverage
-./scripts/dev_cli.py coverage
-
-# Generate a new model configuration
-./scripts/dev_cli.py gen-model my_new_model --endpoint="http://my-model-api.com"
-
-# Generate a test file skeleton
-./scripts/dev_cli.py gen-test core.orchestrator --async-test
+# Start dummy model servers (runs on ports 8001-8010)
+python app/scripts/run_dummy_servers.py
 ```
 
-## Project Structure
+3. **Running the Orchestrator**:
 
-```
-ml-orchestrator/
-├── README.md
-├── Makefile                    # Common development commands
-├── pyproject.toml
-├── docker-compose.yml
-├── Dockerfile
-├── .env.example
-├── app/
-│   ├── __init__.py
-│   ├── main.py                 # Main FastAPI application entry point
-│   ├── config/
-│   │   ├── __init__.py
-│   │   ├── models_config.py    # Config loader/parser for model endpoints
-│   │   └── settings.py         # Global app settings
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── routes/
-│   │   │   ├── __init__.py
-│   │   │   ├── health.py       # Health check endpoints
-│   │   │   ├── orchestrator.py # Main orchestrator routing logic
-│   │   │   └── admin.py        # Admin endpoints for managing models
-│   │   └── dependencies.py     # FastAPI dependencies
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── orchestrator.py     # Core orchestration logic
-│   │   ├── models.py           # Pydantic models for requests/responses
-│   │   └── exceptions.py       # Custom exception handlers
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── model_registry.py   # Service for model registry operations
-│   │   └── proxy.py            # Service for proxying requests to models
-│   └── utils/
-│       ├── __init__.py
-│       ├── logging.py          # Logging utilities
-│       └── http.py             # HTTP client utilities
-├── tests/
-│   ├── README.md               # Testing guide
-│   ├── __init__.py
-│   ├── conftest.py
-│   ├── test_coverage_summary.md # Coverage summary
-│   ├── test_api/
-│   │   ├── test_dependencies.py
-│   │   ├── test_health.py
-│   │   ├── test_health_async.py
-│   │   ├── test_orchestrator.py
-│   │   └── test_admin.py
-│   ├── test_config/
-│   │   ├── test_models_config.py
-│   │   └── test_models_config_advanced.py
-│   ├── test_core/
-│   │   ├── test_exceptions.py
-│   │   ├── test_models.py
-│   │   └── test_orchestrator.py
-│   ├── test_services/
-│   │   ├── test_model_registry.py
-│   │   ├── test_model_registry_advanced.py
-│   │   ├── test_proxy.py
-│   │   └── test_proxy_advanced.py
-│   └── test_utils/
-│       ├── test_http.py
-│       └── test_logging.py
-├── config/                      # Configuration files
-│   ├── models/                  # YAML config files for models
-│   │   ├── model_1.yaml
-│   │   └── model_2.yaml
-│   └── models_registry.yaml     # Main registry of all models
-├── .github/                     # GitHub workflows and templates
-│   ├── workflows/               # CI/CD workflows
-│   └── ISSUE_TEMPLATE/          # Issue templates
-└── scripts/
-    ├── dev_cli.py              # Development CLI tool
-    ├── coverage_report.py      # Test coverage reporting tool
-    ├── setup_dev.sh            # Development environment setup script
-    ├── reload_config.sh        # Script to reload config without restart
-    ├── health_check.sh         # Health check script
-    ├── create_dummy_models.py  # Tool to create dummy model APIs for testing
-    ├── start_dummy_models.sh   # Auto-generated script to start dummy models
-    └── DUMMY_MODELS_README.md  # Documentation for dummy model APIs
+```bash
+# Start the orchestrator (runs on port 8000)
+python app/main.py
 ```
 
-## Architecture Design
+## Model Configuration
 
-### System Components
+### Model Configuration Structure
 
-#### Configuration System
-- **ModelConfigManager**: Loads and monitors YAML configuration files
-- **Settings**: Application settings from environment variables
+Each model is configured using a YAML file in the `config/models` directory. Example configuration:
 
-#### API Layer
-- **OrchestratorRouter**: Dynamically routes requests to model endpoints
-- **AdminRouter**: Manages model configurations
-- **HealthRouter**: Provides health check endpoints
-
-#### Core Services
-- **ModelRegistry**: In-memory registry of model configurations
-- **OrchestratorService**: Routes requests to appropriate model endpoints
-- **ProxyService**: Forwards requests to model endpoints with error handling
-
-#### Request Flow
+```yaml
+active: true
+circuit_breaker:
+  failure_threshold: 5
+  reset_timeout: 60.0
+  exclude_exceptions: []
+description: "A dummy model for testing"
+endpoint_url: http://localhost:8001
+headers: {}
+id: dummy-model-1
+max_retries: 3
+name: Dummy Model 1
+timeout: 30.0
+version: 1.0.0
 ```
-User Request → FastAPI → OrchestratorRouter → OrchestratorService → ModelRegistry → ProxyService → Model Endpoint
+
+### Generating Dummy Model Configurations
+
+To generate configurations for dummy models:
+
+```bash
+# Generate configurations for 10 dummy models
+python app/scripts/generate_dummy_configs.py
 ```
 
-### Key Design Patterns
-
-1. **Configuration-as-Code**: YAML files define all model endpoints and their behavior
-2. **Dynamic Routing**: URL paths map directly to model endpoints
-3. **Hot Reloading**: Configuration changes are detected and applied without restart
-4. **Circuit Breaker**: Prevents cascading failures from unavailable model endpoints
-5. **Dependency Injection**: FastAPI dependencies for clean service integration
+This will create YAML files for 10 dummy models in the `config/models` directory.
 
 ## API Usage
 
 ### Model Endpoints
-Access model endpoints through the orchestrator:
-- `https://base-url/orchestrator/model_1` → routes to Model 1's endpoint
-- `https://base-url/orchestrator/model_2` → routes to Model 2's endpoint
 
-### Admin API
-Manage model configurations:
-- `POST /admin/models` - Add a new model
-- `PUT /admin/models/{model_id}` - Update a model
-- `DELETE /admin/models/{model_id}` - Remove a model
-- `GET /admin/models` - List all models
-- `GET /admin/models/{model_id}` - Get a specific model
-- `POST /admin/reload` - Reload all configurations
+```bash
+# Forward a request to a model
+curl -X POST http://localhost:8000/orchestrator/models/{model_id} \
+  -H "Content-Type: application/json" \
+  -d '{"input": "your input data"}'
 
-### Health Checks
-- `GET /health` - Basic health check
-- `GET /health/details` - Detailed health status with component checks
-
-## Configuration Examples
-
-### Main Registry
-
-```yaml
-# config/models_registry.yaml
-version: "1.0.0"
-name: "ML Model Orchestrator Registry"
-description: "Registry of all ML model endpoints"
-
-# Global settings
-settings:
-  default_timeout: 30.0
-  default_max_retries: 3
-  circuit_breaker:
-    failure_threshold: 5
-    reset_timeout: 30.0
-
-# List of all models
-models:
-  - id: "model_1"
-    config_file: "models/model_1.yaml"
-  - id: "model_2"
-    config_file: "models/model_2.yaml"
+# Example with dummy-model-1
+curl -X POST http://localhost:8000/orchestrator/models/dummy-model-1 \
+  -H "Content-Type: application/json" \
+  -d '{"input": "test"}'
 ```
 
-### Model Configuration
+### Health Checks
 
-```yaml
-# config/models/model_1.yaml
-id: "model_1"
-name: "Sentiment Analysis Model"
-description: "Model for sentiment analysis of text"
-endpoint_url: "${MODEL_1_URL:https://model1-api.example.com/predict}"
-version: "1.0.0"
-timeout: 10.0
-max_retries: 3
+```bash
+# Basic health check
+curl http://localhost:8000/health
 
-# Circuit breaker settings
-circuit_breaker:
-  failure_threshold: 5
-  reset_timeout: 30.0
-
-# Authentication settings
-auth:
-  type: "api_key"
-  key_name: "X-API-Key"
-  key_value: "${MODEL_1_API_KEY}"
-  location: "header"
+# Detailed health status
+curl http://localhost:8000/health/details
 ```
 
 ## Development
 
-### Setting Up Development Environment
+### Project Structure
 
-We provide a setup script for quick environment configuration:
-
-```bash
-./scripts/setup_dev.sh
+```
+service-orchestrator/
+├── app/
+│   ├── api/          # API routes and endpoints
+│   ├── core/         # Core orchestrator logic
+│   ├── models/       # Pydantic models
+│   ├── services/     # Service implementations
+│   ├── scripts/      # Utility scripts
+│   └── config/       # Configuration files
+├── config/
+│   └── models/       # Model configurations
+├── logs/            # Application logs
+└── tests/           # Test files
 ```
 
-Or set up manually:
+### Logging
 
-```bash
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+The application uses a structured logging system that writes logs to both the console and files:
 
-# Install dependencies
-pip install -r requirements.txt
-pip install -e .
-```
+- Console output: All logs are displayed in the console with timestamps and log levels
+- File logs: Logs are written to the `logs` directory with the following structure:
+  - `app.log`: Main application log file
+  - `{module_name}.log`: Individual module log files (e.g., `model_registry.log`)
 
-### Development Workflow with Make
+Log files are automatically rotated and managed. The `logs` directory is git-ignored to prevent committing log files to the repository.
 
-We provide a Makefile with common development commands:
+### Key Components
 
-```bash
-# Run the application
-make run
+1. **Model Registry**: Manages model configurations and provides access to model metadata
+2. **Orchestrator**: Handles request routing and service coordination
+3. **Proxy Service**: Manages communication with individual model services
+4. **Circuit Breaker**: Implements failure detection and recovery
+5. **Health Monitor**: Tracks service health and availability
 
-# Run linters
-make lint
+### Development Workflow
 
-# Run tests with coverage
-make test-cov
+1. Start dummy model servers:
 
-# Format code
-make format
+   ```bash
+   python app/scripts/run_dummy_servers.py
+   ```
 
-# Clean up build artifacts
-make clean
-```
+2. Start the orchestrator:
 
-### Development CLI
+   ```bash
+   python app/main.py
+   ```
 
-For more advanced development tasks, use our CLI tool:
+3. Test model endpoints:
 
-```bash
-# Run the application with custom settings
-./scripts/dev_cli.py run --port 8080 --debug
+   ```bash
+   curl -X POST http://localhost:8000/orchestrator/models/dummy-model-1 \
+     -H "Content-Type: application/json" \
+     -d '{"input": "test"}'
+   ```
 
-# Run specific tests
-./scripts/dev_cli.py test --module core.models
+4. Monitor health:
+   ```bash
+   curl http://localhost:8000/health/details
+   ```
 
-# Run tests with coverage
-./scripts/dev_cli.py coverage --report html
+## Troubleshooting
 
-# Generate a new model configuration
-./scripts/dev_cli.py gen-model my_model --endpoint="http://example.com/my_model"
+### Common Issues
 
-# Generate a test file skeleton
-./scripts/dev_cli.py gen-test services.proxy --async-test --class-test ProxyService
-```
+1. **Port Conflicts**:
 
-### Adding a New Model
+   - If you see "Address already in use" errors, kill existing processes:
 
-1. Create a new YAML configuration file in `config/models/`
-2. Add the model to the registry in `config/models_registry.yaml`
-3. The service will automatically detect and load the new configuration
+   ```bash
+   pkill -9 -f python
+   ```
 
-Alternatively, use our CLI tool:
+2. **Model Not Found**:
 
-```bash
-./scripts/dev_cli.py gen-model new_model \
-  --endpoint="https://api.example.com/new_model" \
-  --timeout=15.0 \
-  --auth-type=bearer_token \
-  --auth-key="my_secure_token"
-```
+   - Ensure model configurations exist in `config/models/`
+   - Check model IDs match between config and requests
 
-### Creating Dummy Model APIs for Testing
-
-We provide a script to create and run dummy model APIs for testing and development:
-
-```bash
-# Create default dummy models (apple_model and orange_model)
-python scripts/create_dummy_models.py
-
-# Create custom models with specific names
-python scripts/create_dummy_models.py --model-name model1 model2 model3
-
-# Start all dummy models as background processes
-bash scripts/start_dummy_models.sh
-```
-
-For more information, see [DUMMY_MODELS_README.md](scripts/DUMMY_MODELS_README.md).
-
-### Testing
-
-We have comprehensive test coverage (79%) for the codebase. Run the test suite:
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=app
-
-# View coverage report
-./scripts/coverage_report.py --html
-```
+3. **Connection Errors**:
+   - Verify model servers are running
+   - Check endpoint URLs in model configurations
 
 ## Contributing
 
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed information about contributing to this project.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## License
 
-MIT
-
-## Contributors
-
-Your Team Name
+This project is licensed under the MIT License - see the LICENSE file for details.

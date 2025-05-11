@@ -8,30 +8,38 @@ from pydantic import BaseModel, Field
 from app.models.config_models import ModelConfig
 
 class HealthStatus(str, Enum):
-    OK = "ok"
-    WARNING = "warning"
-    ERROR = "error"
+    """Health status enum."""
+    OK = "OK"
+    ERROR = "ERROR"
+    WARNING = "WARNING"
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
 
 class ComponentHealth(BaseModel):
     status: HealthStatus = Field(..., description="Health status of the component")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional health details")
 
-class HealthResponse(BaseModel):
-    status: HealthStatus = Field(..., description="Overall health status")
-    version: str = Field(..., description="Service version")
-    components: Dict[str, 'ComponentHealth'] = Field(default_factory=dict, description="Component health statuses")
+class ModelSummary(BaseModel):
+    """Summary of a model configuration."""
+    id: str
+    name: str
+    description: str
+    version: str
+    active: bool = True
 
 class ErrorResponse(BaseModel):
-    error: str = Field(..., description="Error message")
-    code: str = Field(..., description="Error code")
-    details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
+    """Error response model."""
+    error: str
+    code: str
+    details: Optional[Dict[str, Any]] = None
 
-class ModelSummary(BaseModel):
-    id: str = Field(..., description="Model ID")
-    name: str = Field(..., description="Model name")
-    description: Optional[str] = Field(None, description="Model description")
-    version: str = Field(..., description="Model version")
-    active: bool = Field(..., description="Whether the model is active")
+class HealthResponse(BaseModel):
+    """Health check response model."""
+    status: HealthStatus
+    version: str
+    models: Optional[List[ModelSummary]] = Field(default_factory=list, description="List of model summaries")
+    components: Optional[Dict[str, ComponentHealth]] = Field(default_factory=dict, description="Component health information")
 
 class ModelListResponse(BaseModel):
     models: List[ModelSummary] = Field(..., description="List of model summaries")

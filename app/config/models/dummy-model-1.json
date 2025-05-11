@@ -1,0 +1,18 @@
+{
+  "id": "dummy-model-1",
+  "name": "Dummy Model 1",
+  "description": "A dummy model for testing purposes #1",
+  "version": "1.0.0",
+  "endpoint_url": "http://localhost:8001/predict",
+  "active": true,
+  "circuit_breaker": {
+    "failure_threshold": 5,
+    "reset_timeout": 60.0,
+    "exclude_exceptions": []
+  },
+  "timeout": 30.0,
+  "max_retries": 3,
+  "headers": {
+    "Content-Type": "application/json"
+  }
+}

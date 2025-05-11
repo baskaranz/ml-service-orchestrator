@@ -30,39 +30,46 @@ source venv/bin/activate
 The `create_dummy_models.py` script generates dummy model APIs for testing:
 
 ```bash
-# Create default dummy models (apple_model and orange_model)
+# Create default dummy models (5 models)
 python scripts/create_dummy_models.py
+
+# Create custom number of models
+python scripts/create_dummy_models.py --num-models 10
 
 # Create custom models with specific names
 python scripts/create_dummy_models.py --model-name model1 model2 model3
 
 # Create models with specific ports
-python scripts/create_dummy_models.py --model-name apple_model orange_model --port 8001 8002
+python scripts/create_dummy_models.py --model-name model_1 model_2 --port 8001 8002
 ```
 
 This script automatically:
+
 - Creates FastAPI applications for each dummy model
 - Generates model configuration files in `config/models/`
 - Updates the model registry at `config/models_registry.yaml`
-- Creates a startup script at `scripts/start_dummy_models.sh`
+- Creates a startup script at `scripts/start_dummy_models.py`
 
 The generated configurations are saved in `config/dummy_models.json`.
 
 ## Running Dummy Models
 
-Start the dummy model APIs using the generated script:
+Start the dummy model APIs using the Python script:
 
 ```bash
 # Start all dummy models as background processes
-bash scripts/start_dummy_models.sh
+python scripts/start_dummy_models.py
 ```
 
 This will:
-- Start `apple_model` on port 8001
-- Start `orange_model` on port 8002
-- Keep the processes running until you press a key
+
+- Read the model registry configuration
+- Start each enabled model on its configured port
+- Monitor the models and restart them if they crash
+- Keep the processes running until you press Ctrl+C
 
 Each model provides the following endpoints:
+
 - `/predict` - POST endpoint for model predictions
 - `/health` - GET endpoint for health checks
 - `/info` - GET endpoint for model information
@@ -80,8 +87,9 @@ make run
 ```
 
 The orchestrator will:
+
 - Load model configurations from `config/models_registry.yaml`
-- Connect to the dummy model APIs running on ports 8001 and 8002
+- Connect to all the dummy model APIs
 - Expose endpoints for accessing the models through the orchestrator
 
 ## Testing the Complete System
@@ -91,13 +99,13 @@ The orchestrator will:
 Once both the dummy models and orchestrator are running, you can test the complete system:
 
 ```bash
-# Call apple_model through the orchestrator
-curl -X POST http://localhost:8000/orchestrator/apple_model/predict \
+# Call any model through the orchestrator
+curl -X POST http://localhost:8000/orchestrator/model_1/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": "test input"}'
 
-# Call orange_model through the orchestrator
-curl -X POST http://localhost:8000/orchestrator/orange_model/predict \
+# Try different models
+curl -X POST http://localhost:8000/orchestrator/model_2/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": "test input"}'
 ```
@@ -108,17 +116,17 @@ The dummy models support various input formats:
 
 ```bash
 # String input
-curl -X POST http://localhost:8000/orchestrator/apple_model/predict \
+curl -X POST http://localhost:8000/orchestrator/model_1/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": "text to process"}'
 
 # Dictionary input
-curl -X POST http://localhost:8000/orchestrator/apple_model/predict \
+curl -X POST http://localhost:8000/orchestrator/model_1/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": {"text": "sample text", "value": 42}, "parameters": {"temperature": 0.7}}'
 
 # List input
-curl -X POST http://localhost:8000/orchestrator/apple_model/predict \
+curl -X POST http://localhost:8000/orchestrator/model_1/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": ["item1", "item2", "item3"]}'
 ```
@@ -140,12 +148,12 @@ You can also call the dummy model APIs directly, bypassing the orchestrator:
 ### Prediction Endpoints
 
 ```bash
-# Apple Model prediction
+# Model 1 prediction
 curl -X POST http://localhost:8001/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": "test input"}'
 
-# Orange Model prediction
+# Model 2 prediction
 curl -X POST http://localhost:8002/predict \
   -H "Content-Type: application/json" \
   -d '{"inputs": "test input"}'
@@ -154,20 +162,20 @@ curl -X POST http://localhost:8002/predict \
 ### Health Check Endpoints
 
 ```bash
-# Apple Model health
+# Model 1 health
 curl http://localhost:8001/health
 
-# Orange Model health
+# Model 2 health
 curl http://localhost:8002/health
 ```
 
 ### Model Information Endpoints
 
 ```bash
-# Apple Model info
+# Model 1 info
 curl http://localhost:8001/info
 
-# Orange Model info
+# Model 2 info
 curl http://localhost:8002/info
 ```
 
@@ -177,8 +185,8 @@ curl http://localhost:8002/info
 
 ```json
 {
-  "outputs": "[apple_model] Processed: test input",
-  "model_id": "apple_model",
+  "outputs": "[model_1] Processed: test input",
+  "model_id": "model_1",
   "request_id": "123e4567-e89b-12d3-a456-426614174000",
   "processing_time": 0.123,
   "metadata": {
@@ -194,7 +202,7 @@ curl http://localhost:8002/info
 ```json
 {
   "status": "ok",
-  "model_id": "apple_model",
+  "model_id": "model_1",
   "version": "1.0.0"
 }
 ```
@@ -203,10 +211,10 @@ curl http://localhost:8002/info
 
 ```json
 {
-  "model_id": "apple_model",
+  "model_id": "model_1",
   "version": "1.0.0",
-  "display_name": "Apple Model",
-  "description": "Dummy model API for apple_model",
+  "display_name": "Model 1",
+  "description": "Dummy model API for model_1",
   "input_type": "json",
   "output_type": "json"
 }
@@ -219,10 +227,10 @@ curl http://localhost:8002/info
 To run just one of the models:
 
 ```bash
-# Run only the apple_model (index 0)
+# Run only model_1 (index 0)
 python -m scripts.create_dummy_models --run-server --model-index 0
 
-# Run only the orange_model (index 1)
+# Run only model_2 (index 1)
 python -m scripts.create_dummy_models --run-server --model-index 1
 ```
 
@@ -235,7 +243,7 @@ import json
 # Prediction request
 response = requests.post(
     "http://localhost:8001/predict",
-    headers={"Content-Type": application/json"},
+    headers={"Content-Type": "application/json"},
     json={"inputs": "test input", "parameters": {"param1": "value1"}}
 )
 print(json.dumps(response.json(), indent=2))
@@ -249,80 +257,18 @@ info = requests.get("http://localhost:8001/info")
 print(json.dumps(info.json(), indent=2))
 ```
 
-### Testing Error Rates
-
-The dummy models have a configurable error rate (around 2-3%). To test the error responses:
-
-```bash
-# Make multiple requests to potentially trigger errors
-for i in {1..20}; do
-  echo "Request $i"
-  curl -s -X POST http://localhost:8001/predict \
-    -H "Content-Type: application/json" \
-    -d '{"inputs": "test"}' | grep -q "error" && echo "Got an error!"
-  sleep 0.5
-done
-```
-
-### Creating Custom Models
-
-You can create models with custom behavior by modifying the parameters:
-
-```bash
-# Create models with custom error rates and latency
-python scripts/create_dummy_models.py \
-  --model-name reliable_model slow_model \
-  --port 8003 8004
-```
-
-Then edit `config/dummy_models.json` to customize:
-- `latency_mean`: Average response time in seconds (e.g., 0.1 for 100ms)
-- `latency_stddev`: Standard deviation of latency (for jitter)
-- `error_rate`: Probability of returning an error (0.0 to 1.0)
-
-### Adding Models to the Orchestrator Manually
-
-The `create_dummy_models.py` script automatically adds models to the registry, but you can also do it manually:
-
-1. Create a YAML configuration in `config/models/my_model.yaml`:
-   ```yaml
-   my_model:
-     version: "1.0.0"
-     endpoint: "http://127.0.0.1:8001/predict"
-     timeout_ms: 1000
-     max_retries: 3
-     circuit_breaker:
-       max_failures: 5
-       reset_timeout_ms: 30000
-     auth:
-       enabled: false
-   ```
-
-2. Add the model to `config/models_registry.yaml`:
-   ```yaml
-   models:
-     my_model:
-       config_file: models/my_model.yaml
-       enabled: true
-   ```
-
-3. The orchestrator will automatically detect and load the new configuration if hot-reloading is enabled.
-
 ## Troubleshooting
 
-### Port Already in Use
+### Port Conflicts
 
-If you get an error about the port being already in use:
+If you get port conflicts:
 
 ```bash
-# Check what's using the port
-lsof -i :8001
-
-# Kill the process
-kill <PID>
+# Kill existing processes
+pkill -f "create_dummy_models"
 
 # Or specify different ports
-python scripts/create_dummy_models.py --model-name apple_model orange_model --port 9001 9002
+python scripts/create_dummy_models.py --num-models 5 --port 9001 9002 9003 9004 9005
 ```
 
 ### Models Not Starting
@@ -343,7 +289,7 @@ If the orchestrator can't connect to the dummy models:
 
 1. Make sure the dummy models are running (`ps aux | grep create_dummy_models`)
 2. Check the model registry configuration (`cat config/models_registry.yaml`)
-3. Verify the model configuration files (`cat config/models/apple_model.yaml`)
+3. Verify the model configuration files (`cat config/models/model_1.yaml`)
 4. Ensure the ports match between the running models and the configuration
 
 ### Testing Model Health Independently
@@ -367,7 +313,7 @@ The dummy models intentionally generate random errors based on the configured er
 If you want models with fewer errors, create new ones with a lower error rate:
 
 ```bash
-python scripts/create_dummy_models.py --model-name reliable_model --port 8003
+python scripts/create_dummy_models.py --num-models 1 --port 8003
 ```
 
 Then edit `config/dummy_models.json` to set `error_rate` to a lower value (e.g., 0.01 for 1% errors).

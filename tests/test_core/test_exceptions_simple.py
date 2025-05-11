@@ -132,7 +132,7 @@ def test_setup_exception_handlers(mock_app):
     setup_exception_handlers(mock_app)
     
     # Verify that add_exception_handler was called for each exception type
-    assert mock_app.add_exception_handler.call_count == 4
+    assert mock_app.add_exception_handler.call_count == 5
     
     # Verify ModelRequestError handler was registered
     mock_app.add_exception_handler.assert_any_call(ModelRequestError, model_request_error_handler)

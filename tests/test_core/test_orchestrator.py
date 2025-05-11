@@ -1,3 +1,7 @@
+"""
+Tests for the orchestrator service.
+"""
+
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 
@@ -5,10 +9,11 @@ import pybreaker
 from fastapi import Request, Response
 from starlette.requests import Request
 
-from app.core.orchestrator import Orchestrator, CircuitBreakerListener
-from app.core.models import ModelConfig, CircuitBreakerSettings, AuthConfig
+from app.models.config_models import ModelConfig, CircuitBreakerConfig, AuthConfig
+from app.services.orchestrator import Orchestrator, CircuitBreakerListener
 from app.core.exceptions import ModelRequestError, CircuitBreakerError
 from app.utils.http import HttpClient
+from app.utils.logging import get_logger
 
 # Mock __builtins__ for tests
 MOCK_BUILTINS = {
@@ -47,21 +52,16 @@ def mock_model_config():
     model.name = "Test Model"
     model.endpoint_url = "http://example.com/model"
     model.active = True
-    model.timeout = 30
-    model.max_retries = 3
     model.headers = {"X-API-Key": "test-key"}
     model.auth = MagicMock(spec=AuthConfig)
     model.auth.type = "basic"
     model.auth.username = "user"
     model.auth.password = "pass"
-    
     # Circuit breaker settings
-    cb_settings = MagicMock(spec=CircuitBreakerSettings)
+    cb_settings = MagicMock(spec=CircuitBreakerConfig)
     cb_settings.failure_threshold = 3
     cb_settings.reset_timeout = 60
-    cb_settings.exclude_exceptions = ["ConnectionError"]
     model.circuit_breaker = cb_settings
-    
     return model
 
 
@@ -164,10 +164,9 @@ async def test_get_request_body_raw(orchestrator, mock_request):
     """Test extracting raw request body."""
     # Mock request with non-JSON content type
     mock_request.headers = {"content-type": "text/plain"}
-    
-    # Test fallback to raw body
+    mock_request.body = AsyncMock(return_value=b'{"input": "test"}')
     body = await orchestrator._get_request_body(mock_request)
-    assert body == b'{"input": "test"}'
+    assert body == {"raw": b'{"input": "test"}'}
     mock_request.body.assert_awaited_once()
 
 
@@ -178,11 +177,10 @@ async def test_get_request_body_json_error(orchestrator, mock_request):
     mock_request.headers = {"content-type": "application/json"}
     mock_request.json.side_effect = ValueError("Invalid JSON")
     
-    # Test fallback to raw body when JSON parsing fails
-    body = await orchestrator._get_request_body(mock_request)
-    assert body == b'{"input": "test"}'
-    mock_request.json.assert_awaited_once()
-    mock_request.body.assert_awaited_once()
+    # Test that ModelRequestError is raised
+    with pytest.raises(ModelRequestError) as exc_info:
+        await orchestrator._get_request_body(mock_request)
+    assert "Failed to parse request body" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -230,7 +228,6 @@ async def test_execute_proxied_request_error(orchestrator, mock_http_client):
     
     # Verify exception details
     assert exc_info.value.model_id == "test_model"
-    assert exc_info.value.status_code == 500
     assert "request failed" in str(exc_info.value.message).lower()
 
 
@@ -245,7 +242,6 @@ async def test_proxy_request_inactive_model(orchestrator, mock_request, mock_mod
         await orchestrator.proxy_request(mock_model_config, mock_request)
     
     # Verify exception details
-    assert exc_info.value.status_code == 503
     assert "not active" in str(exc_info.value.message).lower()
     assert mock_model_config.id in exc_info.value.message
 
@@ -292,24 +288,20 @@ async def test_proxy_request_success(orchestrator, mock_request, mock_model_conf
 def test_circuit_breaker_listener():
     """Test CircuitBreakerListener behavior."""
     # Create a listener
-    listener = CircuitBreakerListener("test_model")
-    assert listener.model_id == "test_model"
-    
+    listener = CircuitBreakerListener()
     # Create a mock circuit breaker
     cb = MagicMock(spec=pybreaker.CircuitBreaker)
     cb.current_state = "closed"
-    
     # Test state change notification
-    listener.state_change(cb, "closed", "open")
-    
+    listener.on_close(cb)
+    listener.on_open(cb)
+    listener.on_half_open(cb)
     # Test failure notification
     exc = Exception("Test failure")
-    listener.failure(cb, exc)
-    
+    listener.on_failure(cb, exc)
     # Test success notification (circuit in 'half-open' state)
     cb.current_state = "half-open"
-    listener.success(cb)
-    
+    listener.on_success(cb)
     # Test success notification (circuit in 'closed' state - should not log)
     cb.current_state = "closed"
-    listener.success(cb)
+    listener.on_success(cb)

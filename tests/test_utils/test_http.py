@@ -4,8 +4,9 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 import httpx
 from fastapi import HTTPException
+from app.core.exceptions import ModelRequestError
 
-from app.utils.http import HttpClient
+from app.utils.http import HttpClient, build_url, make_request, handle_request_error, create_httpx_client
 
 
 def test_build_url():
@@ -74,8 +75,8 @@ async def test_make_request_error():
     with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
         mock_request.side_effect = httpx.RequestError("Connection error")
         
-        # Make request and expect exception to be propagated
-        with pytest.raises(httpx.RequestError):
+        # Make request and expect ModelRequestError to be raised
+        with pytest.raises(ModelRequestError):
             await make_request("GET", "http://example.com")
 
 
@@ -83,35 +84,31 @@ def test_handle_request_error():
     """Test handling various request errors."""
     # Test timeout error
     timeout_error = httpx.TimeoutException("Request timed out")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ModelRequestError) as exc_info:
         handle_request_error(timeout_error, "test_model")
     
-    assert exc_info.value.status_code == 504
-    assert "timeout" in str(exc_info.value.detail).lower()
+    assert "timed out" in str(exc_info.value)
     
     # Test connection error
-    conn_error = httpx.ConnectError("Connection refused")
-    with pytest.raises(HTTPException) as exc_info:
-        handle_request_error(conn_error, "test_model")
+    connection_error = httpx.RequestError("Connection failed")
+    with pytest.raises(ModelRequestError) as exc_info:
+        handle_request_error(connection_error, "test_model")
     
-    assert exc_info.value.status_code == 502
-    assert "connection" in str(exc_info.value.detail).lower()
+    assert "Connection failed" in str(exc_info.value)
     
     # Test generic request error
     req_error = httpx.RequestError("General error")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ModelRequestError) as exc_info:
         handle_request_error(req_error, "test_model")
     
-    assert exc_info.value.status_code == 502
-    assert "error" in str(exc_info.value.detail).lower()
+    assert "General error" in str(exc_info.value)
     
     # Test other exceptions
     other_error = ValueError("Unexpected error")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ModelRequestError) as exc_info:
         handle_request_error(other_error, "test_model")
     
-    assert exc_info.value.status_code == 500
-    assert "unexpected error" in str(exc_info.value.detail).lower()
+    assert "Unexpected error" in str(exc_info.value)
 
 
 def test_create_httpx_client():

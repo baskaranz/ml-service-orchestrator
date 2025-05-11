@@ -8,7 +8,7 @@ from typing import Dict, List
 from fastapi import APIRouter, Depends
 
 from app.config.settings import settings
-from app.schemas.api_models import ComponentHealth, HealthResponse, HealthStatus
+from app.schemas.api_models import ComponentHealth, HealthResponse, HealthStatus, ModelSummary
 from app.services.model_registry import ModelRegistryService, get_model_registry_service
 from app.utils.logging import get_logger
 
@@ -33,6 +33,7 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status=HealthStatus.OK,
         version=settings.APP_VERSION,
+        models=[],
         components={}
     )
 
@@ -55,22 +56,36 @@ async def detailed_health_check(
     Returns:
         Detailed health status response
     """
+    # Gather model summaries
+    models = model_registry.list_models()
+    model_summaries = [
+        ModelSummary(
+            id=model.id,
+            name=model.name,
+            description=model.description,
+            version=model.version,
+            active=model.active
+        ) for model in models
+    ]
+    
+    # Get component health
     components = {}
     overall_status = HealthStatus.OK
     
     # Check system health
-    system_health = patched_get_system_health()
+    system_health = get_system_health()
     components["system"] = system_health
     overall_status = update_overall_status(overall_status, system_health.status)
     
     # Check model registry health
-    registry_health = patched_get_registry_health(model_registry)
+    registry_health = get_registry_health(model_registry)
     components["model_registry"] = registry_health
     overall_status = update_overall_status(overall_status, registry_health.status)
     
     return HealthResponse(
         status=overall_status,
         version=settings.APP_VERSION,
+        models=model_summaries,
         components=components
     )
 

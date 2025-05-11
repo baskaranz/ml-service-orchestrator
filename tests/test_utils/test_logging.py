@@ -6,7 +6,9 @@ import pytest
 
 from app.utils.logging import (
     get_logger,
-    RequestLogContext
+    setup_logging,
+    RequestLogContext,
+    LoggingMiddleware
 )
 
 
@@ -73,10 +75,7 @@ async def test_logging_middleware(logging_middleware, mock_request, mock_app):
         return response
     
     # Setup log capture
-    with patch("app.utils.logging.get_logger") as mock_get_logger:
-        mock_logger = MagicMock()
-        mock_get_logger.return_value = mock_logger
-        
+    with patch.object(logging_middleware, "logger") as mock_logger:
         # Call middleware
         response = await logging_middleware.dispatch(mock_request, mock_call_next)
         
@@ -84,11 +83,15 @@ async def test_logging_middleware(logging_middleware, mock_request, mock_app):
         assert response.status_code == 200
         
         # Verify logging occurred
-        mock_logger.info.assert_called()
-        # Check that the log message contains request method and path
-        log_args = mock_logger.info.call_args[0][0]
-        assert "GET" in log_args
-        assert "/test/path" in log_args
+        assert mock_logger.info.call_count >= 2  # Should log at start and end
+        
+        # Verify some of the log messages
+        log_calls = [call_args[0][0] for call_args in mock_logger.info.call_args_list]
+        # Check that the log messages contain the request method and path
+        assert any("Request started" in log_call for log_call in log_calls)
+        assert any("Request completed" in log_call for log_call in log_calls)
+        assert any("GET" in log_call for log_call in log_calls)
+        assert any("/test/path" in log_call for log_call in log_calls)
 
 
 def test_request_log_context():
@@ -120,14 +123,14 @@ def test_request_log_context_with_model():
     context = RequestLogContext(
         request_id="model-req-123",
         method="POST",
-        path="/orchestrator/sentiment/predict",
+        path="/orchestrator/test-model/predict",
         client_ip="192.168.1.1",
-        model_id="sentiment"
+        model_id="test-model"
     )
     
     # Check model is included
-    assert context.model_id == "sentiment"
+    assert context.model_id == "test-model"
     
     # Test string representation includes model
     context_str = str(context)
-    assert "sentiment" in context_str
+    assert "test-model" in context_str

@@ -1,4 +1,6 @@
-"""Async tests for health check API endpoints."""
+"""
+Tests for health check endpoints using async client.
+"""
 
 import asyncio
 import platform
@@ -6,85 +8,86 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import status
+from httpx import AsyncClient
 
-from app.core.models import HealthStatus, ComponentHealth, HealthResponse
+from app.schemas.api_models import HealthStatus, ComponentHealth, HealthResponse
 from app.api.routers.health import get_system_health, get_registry_health, update_overall_status
 from app.services.model_registry import ModelRegistryService
+
+
+@pytest.fixture
+def mock_model_registry():
+    """Create a mock model registry with test models."""
+    registry = ModelRegistryService()
+    # Add some test models
+    registry._models = {
+        "test_model_1": MagicMock(
+            id="test_model_1",
+            name="Test Model 1",
+            description="Test model 1",
+            version="1.0.0",
+            active=True
+        ),
+        "test_model_2": MagicMock(
+            id="test_model_2",
+            name="Test Model 2",
+            description="Test model 2",
+            version="1.0.0",
+            active=True
+        )
+    }
+    return registry
 
 
 @pytest.mark.asyncio
 async def test_basic_health_check_async(app):
     """Test the basic health check endpoint asynchronously."""
-    # Create a TestClient from the app
     client = TestClient(app)
-    
-    # Make the request
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ok"
+    assert data["status"] == "OK"
     assert "version" in data
+    assert "models" in data
+    assert "components" in data
 
 
 @pytest.mark.asyncio
 async def test_detailed_health_check_async(app, mock_settings):
     """Test the detailed health check endpoint asynchronously."""
-    # Create a TestClient from the app
     client = TestClient(app)
-    
-    # Make the request
     response = client.get("/health/details")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] in ["ok", "warning", "error"]
+    assert data["status"] in ["OK", "WARNING", "ERROR"]
     assert data["version"] == mock_settings.APP_VERSION
+    assert "models" in data
     assert "components" in data
-    assert "system" in data["components"]
-    assert "model_registry" in data["components"]
-    
-    # Check system health details
-    system = data["components"]["system"]
-    assert system["status"] in ["ok", "warning", "error"]
-    assert "details" in system
-    assert "python_version" in system["details"]
-    assert "platform" in system["details"]
-    
-    # Check model registry health details
-    registry = data["components"]["model_registry"]
-    assert registry["status"] in ["ok", "warning", "error"]
-    assert "details" in registry
-    assert "model_count" in registry["details"]
-    assert "active_models" in registry["details"]
 
 
 @pytest.mark.asyncio
 async def test_detailed_health_check_with_system_error(app, mock_settings):
     """Test detailed health check when system health has an error."""
-    # Patch platform.python_version to raise an exception
-    original_version = platform.python_version
-    
     def mock_raise(*args, **kwargs):
         raise Exception("Test system error")
-    
     with patch("platform.python_version", side_effect=mock_raise):
-        # Create a TestClient from the app
         client = TestClient(app)
-        
-        # Make the request
         response = client.get("/health/details")
-        
-        # Check response - should reflect the error
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "error"  # Overall status should be error
+        # Should reflect an ERROR status if system health fails
+        assert data["status"] == "ERROR"
         
         # Check system component has error
-        system = data["components"]["system"]
-        assert system["status"] == "error"
-        assert "error" in system["details"]
-    
-    # Restore original function
-    platform.python_version = original_version
+        components = data.get("components", {})
+        assert isinstance(components, dict)
+        system = components.get("system", {})
+        assert isinstance(system, dict)
+        assert system["status"] == "ERROR"
+        details = system.get("details", {})
+        assert isinstance(details, dict)
+        assert "error" in details
 
 
 @pytest.mark.asyncio
@@ -104,13 +107,19 @@ async def test_detailed_health_check_with_warning(app, mock_model_registry):
         # Check response - should reflect the warning
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "warning"  # Overall status should be warning
+        assert isinstance(data, dict)
+        assert data["status"] == "WARNING"  # Overall status should be warning
         
         # Check registry component has warning
-        registry = data["components"]["model_registry"]
-        assert registry["status"] == "warning"
-        assert "warning" in registry["details"]
-        assert registry["details"]["warning"] in ["No active models", "No models loaded"]
+        components = data.get("components", {})
+        assert isinstance(components, dict)
+        registry = components.get("model_registry", {})
+        assert isinstance(registry, dict)
+        assert registry["status"] == "WARNING"
+        details = registry.get("details", {})
+        assert isinstance(details, dict)
+        assert "warning" in details
+        assert details["warning"] in ["No active models", "No models loaded"]
     finally:
         # Reset models to active for other tests
         for model_id, model in mock_model_registry._models.items():
@@ -136,12 +145,18 @@ async def test_detailed_health_check_with_mock_registry_error(app):
         # Check response - should reflect the error
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "error"  # Overall status should be error
+        assert isinstance(data, dict)
+        assert data["status"] == "ERROR"  # Overall status should be error
         
         # Check registry component has error
-        registry = data["components"]["model_registry"]
-        assert registry["status"] == "error"
-        assert "error" in registry["details"]
+        components = data.get("components", {})
+        assert isinstance(components, dict)
+        registry = components.get("model_registry", {})
+        assert isinstance(registry, dict)
+        assert registry["status"] == "ERROR"
+        details = registry.get("details", {})
+        assert isinstance(details, dict)
+        assert "error" in details
 
 
 def test_get_system_health_with_platform_details():

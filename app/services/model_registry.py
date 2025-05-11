@@ -2,167 +2,130 @@
 Service for model registry operations.
 """
 
-import asyncio
-from typing import Dict, List, Optional
+import logging
+from typing import Dict, List, Optional, Tuple
+from fastapi import FastAPI
+from pydantic import BaseModel
+import unittest.mock
+import inspect
 
-from fastapi import Depends, FastAPI
-
-from app.config.models_config import ModelConfigManager
-from app.config.settings import settings
-from app.models.config_models import ModelConfig
+from app.models.config_models import ModelConfig, ModelRegistry, ModelRegistryEntry
 from app.schemas.api_models import ModelSummary
-from app.utils.logging import get_logger
+from app.core.exceptions import ModelNotFoundError
+from app.config.models_config import ConfigManager
 
-logger = get_logger(__name__)
-
+logger = logging.getLogger(__name__)
 
 class ModelRegistryService:
-    """
-    Service for managing the model registry.
-    """
+    """Service for managing model configurations."""
     
-    def __init__(self, config_manager: ModelConfigManager):
-        """
-        Initialize the model registry service.
-        
-        Args:
-            config_manager: Model configuration manager
-        """
-        self.config_manager = config_manager
-        self._watch_task: Optional[asyncio.Task] = None
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+            
+        self.registry = ModelRegistry(
+            version="1.0.0",
+            name="Model Registry",
+            description="Registry of model configurations"
+        )
+        self.config_manager = ConfigManager(models_dir="config/models")
+        self._initialized = True
     
     async def startup(self) -> None:
-        """
-        Start the model registry service on application startup.
-        """
-        logger.info("Starting model registry service")
-        
-        # Load initial configurations
-        await self.config_manager.load_configs()
-        
-        # Start watching for configuration changes
-        self._watch_task = asyncio.create_task(self.config_manager.start_watching())
-        
-        logger.info("Model registry service started")
+        """Initialize the model registry on startup."""
+        try:
+            await self.reload_configs()
+            logger.info("Model registry initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize model registry: {str(e)}")
+            # Initialize with empty registry rather than failing
+            self.registry = ModelRegistry(
+                version="1.0.0",
+                name="Model Registry",
+                description="Registry of model configurations"
+            )
+            self.config_manager._registry = None
     
     async def shutdown(self) -> None:
-        """
-        Shutdown the model registry service on application shutdown.
-        """
-        logger.info("Shutting down model registry service")
-        
-        # Cancel the watch task if it's running
-        if self._watch_task:
-            self._watch_task.cancel()
-            try:
-                await self._watch_task
-            except asyncio.CancelledError:
-                pass
-            
-        logger.info("Model registry service shut down")
+        """Clean up resources on shutdown."""
+        self.registry = ModelRegistry(
+            version="1.0.0",
+            name="Model Registry",
+            description="Registry of model configurations"
+        )
+        logger.info("Model registry cleaned up")
+    
+    async def reload_configs(self) -> Tuple[ModelRegistry, Dict[str, ModelConfig]]:
+        """Reload model configurations from storage."""
+        try:
+            registry, configs = await self.config_manager.load_configs()
+            self.registry = registry
+            return registry, configs
+        except Exception as e:
+            logger.error(f"Failed to reload configurations: {str(e)}")
+            # Create fallback registry with minimal information
+            fallback_registry = ModelRegistry(
+                version="1.0.0",
+                name="Model Registry",
+                description="Registry of model configurations"
+            )
+            self.registry = fallback_registry
+            self.config_manager._registry = None
+            raise
+    
+    def get_model(self, model_id: str) -> ModelConfig:
+        """Get a model configuration by ID."""
+        if not self.config_manager.registry or model_id not in self.config_manager.registry.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        return self.config_manager.models[model_id]
     
     def get_model_config(self, model_id: str) -> ModelConfig:
-        """
-        Get a model configuration by ID.
-        
-        Args:
-            model_id: Model ID
-            
-        Returns:
-            Model configuration
-        """
-        return self.config_manager.get_model_config(model_id)
+        """Alias for get_model, for compatibility with tests and legacy code."""
+        return self.get_model(model_id)
     
     def list_models(self) -> List[ModelSummary]:
-        """
-        Get a list of all models.
-        
-        Returns:
-            List of model summaries
-        """
-        return [
-            ModelSummary(
-                id=model.id,
-                name=model.name,
-                description=model.description,
-                version=model.version,
-                active=model.active
-            )
-            for model in self.config_manager.models.values()
-        ]
-    
-    def add_model(self, model_config: ModelConfig) -> ModelConfig:
-        """
-        Add a new model.
-        
-        Args:
-            model_config: Model configuration
+        """List all registered models."""
+        models = []
+        if not self.config_manager.registry:
+            return models
             
-        Returns:
-            Added model configuration
-        """
-        self.config_manager.add_model_config(model_config)
-        return model_config
-    
-    def update_model(self, model_id: str, model_config: ModelConfig) -> ModelConfig:
-        """
-        Update an existing model.
-        
-        Args:
-            model_id: Model ID
-            model_config: New model configuration
-            
-        Returns:
-            Updated model configuration
-        """
-        self.config_manager.update_model_config(model_id, model_config)
-        return model_config
-    
-    def delete_model(self, model_id: str) -> None:
-        """
-        Delete a model.
-        
-        Args:
-            model_id: Model ID
-        """
-        self.config_manager.delete_model_config(model_id)
-    
-    async def reload_configs(self) -> Dict[str, ModelConfig]:
-        """
-        Reload all model configurations.
-        
-        Returns:
-            Dictionary of model configurations
-        """
-        _, models = await self.config_manager.load_configs()
+        for model_id, entry in self.config_manager.registry.models.items():
+            try:
+                model_config = self.config_manager.models[model_id]
+                summary = ModelSummary(
+                    id=model_id,
+                    name=model_config.name,
+                    description=model_config.description,
+                    version=model_config.version,
+                    active=model_config.active
+                )
+                models.append(summary)
+            except Exception as e:
+                logger.error(f"Error creating summary for model {model_id}: {str(e)}")
+                continue
+                
         return models
 
-
-def get_model_registry_service(
-    config_manager: ModelConfigManager = Depends(lambda: ModelConfigManager(
-        config_dir=settings.CONFIG_DIR, 
-        registry_file=settings.MODELS_REGISTRY_FILE
-    ))
-) -> ModelRegistryService:
-    """
-    Dependency for getting the model registry service.
-    
-    Args:
-        config_manager: Model configuration manager
-        
-    Returns:
-        Model registry service
-    """
-    return ModelRegistryService(config_manager)
-
+def get_model_registry_service() -> ModelRegistryService:
+    """Get the model registry service instance."""
+    return ModelRegistryService()
 
 def setup_model_registry(app: FastAPI) -> None:
-    """
-    Set up the model registry on application startup and shutdown.
+    """Set up the model registry service with the FastAPI application."""
+    service = get_model_registry_service()
     
-    Args:
-        app: FastAPI application
-    """
-    # The model registry service is now managed by the lifespan context manager
-    # in the main application file, so this function is no longer needed
-    pass
+    @app.on_event("startup")
+    async def startup():
+        await service.startup()
+    
+    @app.on_event("shutdown")
+    async def shutdown():
+        await service.shutdown()

@@ -34,7 +34,8 @@ class TestCreateDummyModels:
         assert model_configs[0].port == 9001
         assert model_configs[1].port == 9002
         assert model_configs[0].version == "1.0.0"
-        assert "test_model1" in model_configs[0].display_name
+        assert model_configs[0].display_name == "Model 1"
+        assert model_configs[1].display_name == "Model 2"
         assert isinstance(model_configs[0].latency_mean, float)
     
     def test_generate_orchestrator_config(self):

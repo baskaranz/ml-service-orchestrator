@@ -1,0 +1,13 @@
+active: true
+circuit_breaker:
+  failure_threshold: 5
+  reset_timeout: 60.0
+  exclude_exceptions: []
+description: 'A dummy model for testing #1'
+endpoint_url: http://localhost:8001
+headers: {}
+id: dummy-model-1
+max_retries: 3
+name: Dummy Model 1
+timeout: 30.0
+version: 1.0.0

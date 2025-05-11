@@ -330,16 +330,19 @@ def create_dummy_models(model_names: List[str], start_port: int = 8001) -> List[
     model_configs = []
     
     for i, model_name in enumerate(model_names):
-        # Create a configuration for this model
+        # Create a configuration for this model with varying characteristics
         config = DummyModelConfig(
             model_id=model_name,
-            version="1.0.0",
-            display_name=model_name.replace("_", " ").title(),
-            description=f"Dummy model API for {model_name}",
+            version=f"1.{i}.0",  # Different versions for each model
+            display_name=f"Model {i+1}",  # More generic display name
+            description=f"Dummy model API for {model_name} with varying characteristics",
             port=start_port + i,
+            host="127.0.0.1",  # Default host
             latency_mean=random.uniform(0.05, 0.3),  # Random latency between 50-300ms
             latency_stddev=random.uniform(0.01, 0.1),  # Random jitter
-            error_rate=random.uniform(0, 0.05)  # 0-5% error rate
+            error_rate=random.uniform(0, 0.05),  # 0-5% error rate
+            input_type="json",
+            output_type="json"
         )
         model_configs.append(config)
     
@@ -362,13 +365,18 @@ def run_server(model_configs: List[DummyModelConfig], model_index: int):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Create and run dummy model APIs for ML Orchestrator")
-    parser.add_argument("--model-name", nargs="+", default=["apple_model", "orange_model"],
+    parser.add_argument("--model-name", nargs="+", default=["model_1", "model_2", "model_3", "model_4", "model_5"],
                         help="Names of the dummy models to create")
     parser.add_argument("--port", type=int, nargs="+", help="Ports for the model APIs (must match number of models)")
     parser.add_argument("--run-server", action="store_true", help="Run a model server")
     parser.add_argument("--model-index", type=int, default=0, help="Index of the model to run (with --run-server)")
+    parser.add_argument("--num-models", type=int, help="Number of models to create (overrides --model-name)")
     
     args = parser.parse_args()
+    
+    # If num_models is specified, generate that many model names
+    if args.num_models:
+        args.model_name = [f"model_{i+1}" for i in range(args.num_models)]
     
     # Check if port list matches model list
     if args.port and len(args.port) != len(args.model_name):
@@ -419,6 +427,9 @@ def main():
     print("\nDummy Model APIs created:")
     for config in model_configs:
         print(f"  - {config.model_id}: http://{config.host}:{config.port}")
+        print(f"    Version: {config.version}")
+        print(f"    Latency: {config.latency_mean:.3f}s ± {config.latency_stddev:.3f}s")
+        print(f"    Error Rate: {config.error_rate:.1%}")
     
     print("\nTo start all dummy models:")
     print(f"  bash {startup_script}")

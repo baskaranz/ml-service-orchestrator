@@ -1,7 +1,0 @@
-models:
-  apple_model:
-    config_file: models/apple_model.yaml
-    enabled: true
-  orange_model:
-    config_file: models/orange_model.yaml
-    enabled: true

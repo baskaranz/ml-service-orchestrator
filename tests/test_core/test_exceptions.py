@@ -9,7 +9,10 @@ from app.core.exceptions import (
     ModelRequestError,
     CircuitBreakerError,
     ConfigurationError,
-    setup_exception_handlers
+    setup_exception_handlers,
+    model_request_error_handler,
+    circuit_breaker_error_handler,
+    configuration_error_handler,
 )
 
 
@@ -36,7 +39,7 @@ async def test_http_error_handler(mock_request):
     
     # Verify response
     assert response.status_code == 400
-    data = json.loads(response.body.decode())
+    data = json.loads(bytes(response.body).decode())
     assert data["error"] == "Test error"
     assert data["code"] == "HTTP_400"
     assert data["details"] is None
@@ -54,7 +57,7 @@ async def test_http_error_handler_with_details(mock_request):
     
     # Verify response
     assert response.status_code == 400
-    data = json.loads(response.body.decode())
+    data = json.loads(bytes(response.body).decode())
     assert data["error"] == "Test error"
     assert data["code"] == "HTTP_400"
     assert data["details"] == {"field": "test_field", "issue": "invalid format"}
@@ -76,7 +79,7 @@ async def test_model_request_error_handler(mock_request):
     
     # Verify response
     assert response.status_code == 502
-    data = json.loads(response.body.decode())
+    data = json.loads(bytes(response.body).decode())
     assert data["error"] == "Model request failed"
     assert data["code"] == "MODEL_REQUEST_ERROR"
     assert data["details"] == {"reason": "Connection error"}
@@ -96,7 +99,7 @@ async def test_circuit_breaker_error_handler(mock_request):
     
     # Verify response
     assert response.status_code == 503  # Service Unavailable
-    data = json.loads(response.body.decode())
+    data = json.loads(bytes(response.body).decode())
     assert data["error"] == "Service temporarily unavailable"
     assert data["code"] == "CIRCUIT_BREAKER_OPEN"
     assert data["details"] == {"model_id": "test_model"}
@@ -116,7 +119,7 @@ async def test_configuration_error_handler(mock_request):
     
     # Verify response
     assert response.status_code == 500  # Internal Server Error
-    data = json.loads(response.body.decode())
+    data = json.loads(bytes(response.body).decode())
     assert data["error"] == "Invalid configuration"
     assert data["code"] == "CONFIGURATION_ERROR"
     assert data["details"] == {"config_file": "models.yaml", "issue": "missing required field"}
@@ -127,7 +130,7 @@ def test_setup_exception_handlers(mock_app):
     setup_exception_handlers(mock_app)
     
     # Verify that add_exception_handler was called for each exception type
-    assert mock_app.add_exception_handler.call_count == 4
+    assert mock_app.add_exception_handler.call_count == 5
     
     # Verify ModelRequestError handler was registered
     mock_app.add_exception_handler.assert_any_call(ModelRequestError, model_request_error_handler)

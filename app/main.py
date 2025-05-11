@@ -3,41 +3,35 @@ Main FastAPI application entry point.
 """
 
 import time
+import sys
+import argparse
 from typing import Dict
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, start_http_server, CollectorRegistry
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routers import api_router
 from app.config.settings import settings
 from app.core.exceptions import setup_exception_handlers
-from app.services.model_registry import setup_model_registry
 from app.utils.logging import get_logger
 from app.config.models_config import ModelConfigManager
 
 logger = get_logger(__name__)
-
-# Metrics
-REQUEST_COUNT = Counter(
-    "orchestrator_request_count", 
-    "Total count of requests by path and method",
-    ["path", "method", "status"]
-)
-
-REQUEST_TIME = Histogram(
-    "orchestrator_request_processing_seconds",
-    "Time spent processing requests",
-    ["path", "method"]
-)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
     """
     Middleware for collecting request metrics.
     """
+    
+    def __init__(self, app, request_count, request_time):
+        super().__init__(app)
+        self.request_count = request_count
+        self.request_time = request_time
     
     async def dispatch(self, request: Request, call_next) -> Response:
         # Start timer
@@ -54,10 +48,10 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         
         # Record request count by path, method, and status
-        REQUEST_COUNT.labels(path=path, method=request.method, status=status_code).inc()
+        self.request_count.labels(path=path, method=request.method, status=status_code).inc()
         
         # Record request time
-        REQUEST_TIME.labels(path=path, method=request.method).observe(duration)
+        self.request_time.labels(path=path, method=request.method).observe(duration)
         
         return response
 
@@ -70,23 +64,49 @@ def create_app() -> FastAPI:
         Configured FastAPI application
     """
     
+    print("Creating FastAPI application...", file=sys.stderr)
+    
+    # Create a new registry for metrics to avoid duplicates
+    registry = CollectorRegistry()
+    
+    # Metrics
+    request_count = Counter(
+        "orchestrator_request_count", 
+        "Total count of requests by path and method",
+        ["path", "method", "status"],
+        registry=registry
+    )
+
+    request_time = Histogram(
+        "orchestrator_request_processing_seconds",
+        "Time spent processing requests",
+        ["path", "method"],
+        registry=registry
+    )
+    
     from app.services.model_registry import ModelRegistryService
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        print("Lifespan context manager - startup", file=sys.stderr)
         logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
         # Start metrics server if enabled
         if settings.METRICS_ENABLED:
-            start_http_server(9090)
+            start_http_server(9090, registry=registry)
             logger.info("Metrics server started on port 9090")
         # Set up model registry service
-        model_registry_service = ModelRegistryService(
-            ModelConfigManager(settings.CONFIG_DIR, settings.MODELS_REGISTRY_FILE)
-        )
+        model_registry_service = ModelRegistryService()
+        # Create config manager for registry if needed
+        if hasattr(model_registry_service, 'config_manager') and model_registry_service.config_manager is None:
+            model_registry_service.config_manager = ModelConfigManager(
+                settings.CONFIG_DIR, 
+                settings.MODELS_REGISTRY_FILE
+            )
         await model_registry_service.startup()
         try:
             yield
         finally:
+            print("Lifespan context manager - shutdown", file=sys.stderr)
             logger.info(f"Shutting down {settings.APP_NAME}")
             await model_registry_service.shutdown()
 
@@ -99,6 +119,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     
+    print("Configuring middleware...", file=sys.stderr)
+    
     # Configure CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -110,13 +132,10 @@ def create_app() -> FastAPI:
     
     # Add metrics middleware if enabled
     if settings.METRICS_ENABLED:
-        app.add_middleware(MetricsMiddleware)
+        app.add_middleware(MetricsMiddleware, request_count=request_count, request_time=request_time)
     
     # Set up exception handlers
     setup_exception_handlers(app)
-    
-    # Set up model registry
-    setup_model_registry(app)
     
     # Include API routes
     app.include_router(api_router)
@@ -131,8 +150,36 @@ def create_app() -> FastAPI:
             "status": "running"
         }
     
+    print("Application created successfully", file=sys.stderr)
     return app
 
 
 # Create the application instance
+print("Starting app/main.py...", file=sys.stderr)
 app = create_app()
+print("Main application instance created, app variable set", file=sys.stderr)
+
+if __name__ == "__main__":
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Run the FastAPI application server")
+    parser.add_argument("--host", default=settings.HOST, help="Host to bind the server to")
+    parser.add_argument("--port", type=int, default=settings.PORT, help="Port to bind the server to")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--workers", type=int, default=settings.WORKERS, help="Number of worker processes")
+    
+    args = parser.parse_args()
+    
+    # Override settings if provided from command line
+    if args.debug:
+        settings.DEBUG = True
+    
+    # Run the server
+    print(f"Starting server at {args.host}:{args.port}", file=sys.stderr)
+    uvicorn.run(
+        "app.main:app",
+        host=args.host,
+        port=args.port,
+        log_level="debug" if settings.DEBUG else "info",
+        workers=args.workers,
+        reload=settings.DEBUG
+    )

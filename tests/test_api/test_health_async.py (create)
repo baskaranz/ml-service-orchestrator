@@ -1,0 +1,20 @@
+pyproject.toml:
+[tool.poetry.dependencies]
+pytest-asyncio = "^0.18.3"
+
+tests/conftest.py:
+import pytest
+import asyncio
+
+@pytest.fixture
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+tests/test_api/test_health_async.py:
+import pytest
+
+@pytest.mark.asyncio
+async def test_health_check():
+    assert True

@@ -1,0 +1,32 @@
+id: "model_1"
+name: "Sentiment Analysis Model"
+description: "Model for sentiment analysis of text"
+endpoint_url: "${MODEL_1_URL:https://model1-api.example.com/predict}"
+version: "1.0.0"
+timeout: 10.0
+max_retries: 3
+
+# Circuit breaker settings
+circuit_breaker:
+  failure_threshold: 5
+  reset_timeout: 30.0
+
+# Authentication settings
+auth:
+  type: "api_key"
+  key_name: "X-API-Key"
+  key_value: "${MODEL_1_API_KEY}"
+  location: "header"
+
+# Caching settings
+cache:
+  enabled: true
+  ttl: 300
+  max_size: 100
+  vary_by_headers:
+    - "Content-Type"
+    - "Accept"
+
+# Headers to send with requests
+headers:
+  X-Source: "ml-orchestrator"

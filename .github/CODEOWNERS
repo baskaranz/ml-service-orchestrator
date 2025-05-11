@@ -1,0 +1,31 @@
+# ML Orchestrator Service Code Owners
+# Automatically request reviews from the appropriate teams
+
+# Default owners for everything
+*                   @baskaran
+
+# Core functionality
+/app/core/          @baskaran
+/tests/test_core/    @baskaran
+
+# API routes and controllers
+/app/api/           @baskaran
+
+# Service layer
+/app/services/      @baskaran
+
+# Configuration 
+/app/config/        @baskaran
+
+# Utilities
+/app/utils/         @baskaran
+
+# Documentation
+/docs/              @baskaran
+
+# GitHub workflows
+/.github/workflows/ @baskaran
+
+# Infrastructure and deployment
+/Dockerfile         @baskaran
+/docker-compose.yml @baskaran

@@ -1,0 +1,9 @@
+import pytest
+
+@pytest.fixture
+async def async_fixture():
+    yield "fixture value"
+
+@pytest.mark.asyncio
+async def test_async_example(async_fixture):
+    assert async_fixture == "fixture value"

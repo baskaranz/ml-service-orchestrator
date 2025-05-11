@@ -1,0 +1,26 @@
+id: "model_2"
+name: "Image Classification Model"
+description: "Model for classifying images"
+endpoint_url: "${MODEL_2_URL:https://model2-api.example.com/classify}"
+version: "1.0.0"
+timeout: 30.0
+max_retries: 2
+
+# Circuit breaker settings
+circuit_breaker:
+  failure_threshold: 3
+  reset_timeout: 60.0
+
+# Authentication settings
+auth:
+  type: "bearer_token"
+  key_value: "${MODEL_2_TOKEN}"
+
+# Caching settings
+cache:
+  enabled: false
+
+# Headers to send with requests
+headers:
+  X-Source: "ml-orchestrator"
+  X-Request-Timeout: "30000"

@@ -1,0 +1,216 @@
+# Claude Code Snippets for the ML Orchestrator Service
+# Use these snippets for common VIBE coding patterns
+
+# This file contains reusable text snippets and templates for working
+# with Claude Code. Each snippet includes a description and the text content.
+# Snippets should be loaded by the Claude Code executor to provide context
+# and improve efficiency when coding with voice.
+
+snippets:
+  # Navigation snippets
+  search_files:
+    description: "Search for files with a specific pattern"
+    content: |
+      Find all files that contain [PATTERN].
+      Focus on Python files in the app directory.
+
+  find_implementation:
+    description: "Find implementation of a specific component"
+    content: |
+      Show me where the [COMPONENT] is implemented.
+      Include both the interface and concrete implementation.
+
+  find_usages:
+    description: "Find all usages of a function or class"
+    content: |
+      Find all places where [FUNCTION/CLASS] is used throughout the project.
+      Show both import statements and actual usage.
+
+  # Understanding snippets
+  understand_component:
+    description: "Get high-level explanation of a component"
+    content: |
+      Explain how the [COMPONENT] works in this project.
+      Focus on its responsibility, interfaces, and interactions with other components.
+
+  understand_flow:
+    description: "Understand a specific workflow"
+    content: |
+      Explain the request flow from [START] to [END].
+      Include all components involved and how data flows between them.
+
+  understand_feature:
+    description: "Understand a specific feature"
+    content: |
+      Explain how the [FEATURE] functionality is implemented.
+      Include key classes, methods, and configuration involved.
+
+  # Implementation snippets
+  add_feature:
+    description: "Add a new feature"
+    content: |
+      Let's implement [FEATURE] with these requirements:
+      1. [REQUIREMENT1]
+      2. [REQUIREMENT2]
+      3. [REQUIREMENT3]
+      
+      First, let's identify which files need to be modified.
+      Then, plan the implementation steps.
+      Finally, make the necessary changes and create tests.
+
+  fix_bug:
+    description: "Fix a bug"
+    content: |
+      Fix the bug where [PROBLEM DESCRIPTION].
+      The issue appears to be in [SUSPECTED LOCATION].
+      Ensure the fix includes proper error handling and tests.
+
+  refactor_code:
+    description: "Refactor existing code"
+    content: |
+      Refactor the [COMPONENT] to improve [ASPECT].
+      Make sure to maintain backward compatibility and test coverage.
+      Focus on [SPECIFIC IMPROVEMENT] while refactoring.
+
+  # Testing snippets
+  create_tests:
+    description: "Create tests for a component"
+    content: |
+      Create comprehensive tests for [COMPONENT].
+      Include tests for:
+      1. Normal operation
+      2. Edge cases
+      3. Error conditions
+      4. Performance requirements
+      
+      Use pytest fixtures and mocks as appropriate.
+
+  improve_coverage:
+    description: "Improve test coverage for a specific module"
+    content: |
+      Improve test coverage for [MODULE].
+      Current coverage is [PERCENTAGE].
+      Focus on testing:
+      1. [UNCOVERED FUNCTION1]
+      2. [UNCOVERED FUNCTION2]
+      3. [UNCOVERED BRANCH]
+
+  test_async:
+    description: "Test async functionality"
+    content: |
+      Create tests for the async functionality in [COMPONENT].
+      Use pytest.mark.asyncio and AsyncMock for testing.
+      Include tests for both success and error scenarios.
+
+  # Documentation snippets
+  document_api:
+    description: "Document API endpoints"
+    content: |
+      Document the [API ENDPOINT] with:
+      1. Purpose and usage
+      2. Request parameters
+      3. Response format
+      4. Error responses
+      5. Example usage
+
+  document_class:
+    description: "Document a class"
+    content: |
+      Add comprehensive documentation to the [CLASS] class:
+      1. Class purpose and responsibility
+      2. Constructor parameters
+      3. Public methods
+      4. Usage examples
+      5. Important notes or caveats
+
+  # Project-specific patterns
+  circuit_breaker:
+    description: "Implement circuit breaker pattern"
+    content: |
+      Implement a circuit breaker for [SERVICE/ENDPOINT] with:
+      1. Failure threshold: [NUMBER]
+      2. Reset timeout: [SECONDS] seconds
+      3. Half-open state behavior
+      4. Proper error propagation
+      5. Metrics and logging
+
+  model_config:
+    description: "Add new model configuration"
+    content: |
+      Add a new model configuration for [MODEL_NAME]:
+      1. Create YAML configuration in config/models/
+      2. Add model to registry in models_registry.yaml
+      3. Implement any special handling in ModelConfigManager
+      4. Add tests for the new configuration
+
+  health_check:
+    description: "Add health check for a component"
+    content: |
+      Add a health check for the [COMPONENT]:
+      1. Implement check in app/api/routes/health.py
+      2. Add component status to the health details response
+      3. Include appropriate error handling
+      4. Add tests for success and failure scenarios
+
+  # Performance optimizations
+  caching:
+    description: "Implement caching"
+    content: |
+      Implement response caching for [ENDPOINT/SERVICE]:
+      1. Use LRU cache with [SIZE] maximum items
+      2. Set TTL to [SECONDS] seconds
+      3. Use [KEY_GENERATOR] for cache keys
+      4. Add cache invalidation strategy
+      5. Include metrics for cache hits/misses
+
+  performance:
+    description: "Optimize performance"
+    content: |
+      Optimize performance of [COMPONENT]:
+      1. Identify bottlenecks through profiling
+      2. Implement [OPTIMIZATION_TECHNIQUE]
+      3. Add benchmarks to verify improvements
+      4. Ensure no regression in functionality
+      5. Document performance characteristics
+
+  # Review snippets
+  code_review:
+    description: "Review code for quality and correctness"
+    content: |
+      Review the implementation of [FEATURE/COMPONENT] for:
+      1. Correctness - Does it meet requirements?
+      2. Error handling - Are errors properly handled?
+      3. Performance - Any obvious performance issues?
+      4. Test coverage - Are all paths tested?
+      5. Code style - Does it follow project conventions?
+
+  security_review:
+    description: "Review code for security issues"
+    content: |
+      Review [COMPONENT] for security issues:
+      1. Input validation
+      2. Authentication and authorization
+      3. Error exposing sensitive information
+      4. Proper handling of secrets
+      5. Protection against common vulnerabilities
+
+  # ML Orchestrator specific workflows
+  model_routing:
+    description: "Implement model routing logic"
+    content: |
+      Implement routing logic for [MODEL_TYPE] models:
+      1. Update OrchestratorRouter to recognize [MODEL_TYPE]
+      2. Add specific request handling in ProxyService
+      3. Implement appropriate error handling
+      4. Add tests for routing and error cases
+      5. Update documentation
+
+  config_hot_reload:
+    description: "Implement config hot-reloading"
+    content: |
+      Implement hot-reloading for [CONFIG_TYPE] changes:
+      1. Add file watcher in ModelConfigManager
+      2. Implement reload mechanism
+      3. Add proper locking for thread safety
+      4. Ensure backward compatibility
+      5. Add tests for reload scenarios

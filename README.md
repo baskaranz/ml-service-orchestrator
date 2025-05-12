@@ -7,6 +7,7 @@ A FastAPI-based service for orchestrating multiple ML model predictions.
 - Docker and Docker Compose
 - Python 3.11 or higher
 - Virtual environment (recommended)
+- Hugging Face API key (for production) or Ollama (for development)
 
 ## Running the Application
 
@@ -71,15 +72,24 @@ curl -X POST http://localhost:8002/predict \
 Model configurations are stored in the `config/models` directory. Each model should have its own YAML configuration file with the following structure:
 
 ```yaml
-name: model-name
-version: 1.0.0
+id: model-name
+name: Model Name
 description: Model description
-endpoint: http://localhost:8001 # Model server endpoint
-health_check: /health
-prediction_endpoint: /predict
-timeout: 30
-retry_count: 3
-retry_delay: 1
+endpoint_url: http://localhost:8001
+version: 1.0.0
+active: true
+timeout: 30.0
+max_retries: 3
+type: classification
+metadata:
+  framework: pytorch
+  tags: [test, dummy]
+llm_provider:
+  type: huggingface # or ollama
+  model_name: mistralai/Mistral-7B-Instruct-v0.2
+  timeout: 30
+  max_retries: 3
+  api_key: ${HUGGINGFACE_API_KEY} # Optional, can be set via environment
 ```
 
 ### Environment Variables
@@ -91,30 +101,43 @@ The orchestrator service uses the following environment variables (configured in
 - `DEBUG`: Debug mode (default: true)
 - `HOST`: Host to bind to (default: 0.0.0.0)
 - `PORT`: Port to listen on (default: 8000)
+- `HUGGINGFACE_API_KEY`: API key for Hugging Face models (required for production)
+- `APP_ENV`: Environment (development, production, test)
 
-## 🚦 Advanced Error Handling, Retries, and Circuit Breaker
+## 🚦 Advanced LLM-Based Error Handling
 
 ### Overview
 
-This project implements robust, async-compatible error handling and circuit breaker logic for all model API requests. The system is designed to maximize reliability, observability, and resilience against transient and persistent failures.
+This project implements intelligent, LLM-based error handling and circuit breaker logic for all model API requests. The system uses language models to analyze errors, classify them, and make smart decisions about retries and circuit breaker behavior.
 
 ---
 
 ### Features
 
-- **Configurable Retries:**  
-  Each model can specify its own `max_retries` and timeout settings. Retries use exponential backoff and optional jitter to avoid thundering herd problems.
+- **LLM-Based Error Classification:**
 
-- **Async Circuit Breaker:**  
-  Each model is protected by a circuit breaker that tracks failures and automatically opens to prevent repeated failed requests from overwhelming the system.
+  - Uses LangChain and LiteLLM for intelligent error analysis
+  - Classifies errors as transient, permanent, rate limit, or authentication issues
+  - Adapts retry and circuit breaker behavior based on error context
 
-  - Circuit breaker settings (failure threshold, reset timeout, excluded exceptions) are configurable per model.
+- **Smart Retries:**
 
-- **Centralized Error Handling:**  
-  All errors are logged, categorized, and tracked. The system distinguishes between transient errors (which can be retried) and permanent errors (which are not retried).
+  - Retries are guided by LLM classification
+  - Exponential backoff with jitter for rate limits
+  - No retries for permanent errors
+  - Configurable per model
 
-- **Model Statistics Endpoint:**  
-  Query real-time statistics for any model, including request counts, error rates, and last success/failure times.
+- **Adaptive Circuit Breaker:**
+
+  - Circuit breaker thresholds adjust based on LLM analysis
+  - Tracks error patterns and context
+  - Prevents cascading failures
+  - Configurable per model
+
+- **Enhanced Observability:**
+  - Rich error context and classification
+  - Detailed statistics and error patterns
+  - Model-aware error handling
 
 ---
 
@@ -123,13 +146,16 @@ This project implements robust, async-compatible error handling and circuit brea
 Each model in your configuration can specify:
 
 ```yaml
-max_retries: 3
-timeout: 10.0
+llm_provider:
+  type: huggingface # or ollama
+  model_name: mistralai/Mistral-7B-Instruct-v0.2
+  timeout: 30
+  max_retries: 3
+  api_key: ${HUGGINGFACE_API_KEY}
+
 circuit_breaker:
   failure_threshold: 5
   reset_timeout: 60.0
-  exclude_exceptions:
-    - ValueError
 ```
 
 ---
@@ -139,13 +165,13 @@ circuit_breaker:
 #### **Forward Request to Model**
 
 - `POST /orchestrator/{model_id}`
-  - Forwards a request to the specified model endpoint with full error handling and circuit breaker protection.
+  - Forwards a request to the specified model endpoint with LLM-based error handling
 
 #### **Get Model Statistics**
 
 - `GET /orchestrator/{model_id}/stats`
 
-  - Returns statistics and error handling information for the specified model.
+  - Returns detailed statistics including error classifications and patterns
 
   **Example Response:**
 
@@ -160,13 +186,14 @@ circuit_breaker:
       "last_failure": "2024-06-01T12:40:00.123Z"
     },
     "error_stats": {
-      "counts": {
-        "TimeoutError": 3,
-        "HTTPStatusError": 4
+      "classifications": {
+        "transient": 3,
+        "permanent": 2,
+        "rate_limit": 2
       },
       "last_errors": {
-        "TimeoutError": "2024-06-01T12:39:00.000Z",
-        "HTTPStatusError": "2024-06-01T12:40:00.123Z"
+        "transient": "2024-06-01T12:39:00.000Z",
+        "permanent": "2024-06-01T12:40:00.123Z"
       }
     }
   }
@@ -176,25 +203,27 @@ circuit_breaker:
 
 ### Testing
 
-A comprehensive test script is provided at `app/scripts/test_error_handling.py`:
+Comprehensive test suites are provided:
 
-- Simulates both transient and persistent failures.
-- Verifies retry logic, error handling, and statistics tracking.
-- Can be used as a template for future tests.
+- `tests/test_utils/test_llm_error_handling.py`: Tests for LLM-based error handling
+- `tests/test_services/test_proxy.py`: Tests for proxy service with error handling
+- `tests/test_config/test_models_config.py`: Tests for model configuration
 
-Run the test with:
+Run the tests with:
 
 ```bash
-python -m app.scripts.test_error_handling
+pytest -v
 ```
 
 ---
 
 ### Best Practices
 
-- Use async functions for all I/O-bound operations.
-- Configure circuit breaker and retry settings per model for optimal resilience.
-- Monitor the statistics endpoint to track model health and error rates.
+- Use Hugging Face in production and Ollama in development
+- Configure appropriate timeouts and retries per model
+- Monitor error classifications and patterns
+- Use environment variables for API keys
+- Keep error handling configuration in sync with model capabilities
 
 ## Stopping the Application
 
@@ -211,7 +240,8 @@ docker compose down
 ### Adding New Models
 
 1. Create a new model configuration file in `config/models/`
-2. Ensure the model server implements the required endpoints:
+2. Configure the LLM provider and error handling settings
+3. Ensure the model server implements the required endpoints:
    - `GET /health`: Health check endpoint
    - `POST /predict`: Prediction endpoint
 
@@ -231,6 +261,12 @@ The mock server (`app/mocks/model_mock.py`) can be customized to simulate differ
    - Stop conflicting services or use different ports
 
 2. If the orchestrator can't connect to models:
+
    - Verify model configurations in `config/models/`
    - Check if model servers are running
    - Verify network connectivity between services
+
+3. If LLM error handling is not working:
+   - Check LLM provider configuration
+   - Verify API keys are set correctly
+   - Check logs for LLM-related errors

@@ -1,1 +1,11 @@
-pytest-asyncio
+pytest-asyncio>=0.21.0
+fastapi>=0.68.0
+uvicorn>=0.15.0
+pydantic>=1.8.0
+pydantic-settings>=2.0.0
+python-dotenv>=0.19.0
+watchfiles>=0.21.0
+httpx>=0.24.0
+pyyaml>=6.0.0
+prometheus_client>=0.16.0
+pybreaker>=0.7.0

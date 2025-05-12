@@ -1,204 +1,132 @@
-# Service Orchestrator
+# ML Model Orchestrator
 
-A flexible and robust service orchestrator that provides unified access, monitoring, and management capabilities for various services including ML models, databases, and external APIs.
+A FastAPI-based service for orchestrating multiple ML model predictions.
 
-## Features
+## Prerequisites
 
-- **Unified API Gateway**: Single entry point for all your services
-- **Dynamic Service Registration**: Add or remove services without restart
-- **Circuit Breaker**: Automatic failure detection and recovery
-- **Request/Response Transformation**: Transform data between different service formats
-- **Health Monitoring**: Real-time health checks for all services
-- **Authentication**: Flexible authentication mechanisms per service
-- **Caching**: Optional response caching with configurable TTL
-- **Metrics & Logging**: Comprehensive monitoring and debugging
-- **Data Integration**: Connect to databases and external APIs
-- **Service Composition**: Combine multiple services into unified workflows
+- Docker and Docker Compose
+- Python 3.11 or higher
+- Virtual environment (recommended)
 
-## Quick Start
+## Running the Application
 
-1. **Installation**:
+### 1. Start the Orchestrator
+
+The orchestrator service runs in Docker and is model-agnostic. It will automatically discover and use any models configured in the `config/models` directory.
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd service-orchestrator
-
-# Set up development environment
-./scripts/setup_dev.sh
-
-# Activate virtual environment
-source venv/bin/activate
+# Start the orchestrator service
+docker compose up -d
 ```
 
-2. **Running Dummy Models**:
+### 2. Running Mock Models (for Testing)
 
-The orchestrator comes with a set of dummy model servers for testing. To start them:
+For testing purposes, you can run mock model servers locally. The mock servers simulate ML model behavior and are useful for development and testing.
 
 ```bash
-# Start dummy model servers (runs on ports 8001-8010)
-python app/scripts/run_dummy_servers.py
+# Start mock model 1 (in a new terminal)
+cd app/mocks
+python model_mock.py --port 8001 --model-name model-1-mock
+
+# Start mock model 2 (in another terminal)
+cd app/mocks
+python model_mock.py --port 8002 --model-name model-2-mock
 ```
 
-3. **Running the Orchestrator**:
+### 3. Verify Services
+
+Check if all services are running correctly:
 
 ```bash
-# Start the orchestrator (runs on port 8000)
-python app/main.py
-```
-
-## Model Configuration
-
-### Model Configuration Structure
-
-Each model is configured using a YAML file in the `config/models` directory. Example configuration:
-
-```yaml
-active: true
-circuit_breaker:
-  failure_threshold: 5
-  reset_timeout: 60.0
-  exclude_exceptions: []
-description: "A dummy model for testing"
-endpoint_url: http://localhost:8001
-headers: {}
-id: dummy-model-1
-max_retries: 3
-name: Dummy Model 1
-timeout: 30.0
-version: 1.0.0
-```
-
-### Generating Dummy Model Configurations
-
-To generate configurations for dummy models:
-
-```bash
-# Generate configurations for 10 dummy models
-python app/scripts/generate_dummy_configs.py
-```
-
-This will create YAML files for 10 dummy models in the `config/models` directory.
-
-## API Usage
-
-### Model Endpoints
-
-```bash
-# Forward a request to a model
-curl -X POST http://localhost:8000/orchestrator/models/{model_id} \
-  -H "Content-Type: application/json" \
-  -d '{"input": "your input data"}'
-
-# Example with dummy-model-1
-curl -X POST http://localhost:8000/orchestrator/models/dummy-model-1 \
-  -H "Content-Type: application/json" \
-  -d '{"input": "test"}'
-```
-
-### Health Checks
-
-```bash
-# Basic health check
+# Check orchestrator health
 curl http://localhost:8000/health
 
-# Detailed health status
-curl http://localhost:8000/health/details
+# Check mock model 1 health
+curl http://localhost:8001/health
+
+# Check mock model 2 health
+curl http://localhost:8002/health
+```
+
+### 4. Test Predictions
+
+Test the prediction endpoints:
+
+```bash
+# Test mock model 1 prediction
+curl -X POST http://localhost:8001/predict \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"data": [1, 2, 3, 4, 5]}, "parameters": {"threshold": 0.5}}'
+
+# Test mock model 2 prediction
+curl -X POST http://localhost:8002/predict \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"data": [1, 2, 3, 4, 5]}, "parameters": {"threshold": 0.5}}'
+```
+
+## Configuration
+
+### Model Configuration
+
+Model configurations are stored in the `config/models` directory. Each model should have its own YAML configuration file with the following structure:
+
+```yaml
+name: model-name
+version: 1.0.0
+description: Model description
+endpoint: http://localhost:8001 # Model server endpoint
+health_check: /health
+prediction_endpoint: /predict
+timeout: 30
+retry_count: 3
+retry_delay: 1
+```
+
+### Environment Variables
+
+The orchestrator service uses the following environment variables (configured in docker-compose.yml):
+
+- `APP_NAME`: Application name (default: orchestrator)
+- `APP_VERSION`: Application version (default: 1.0.0)
+- `DEBUG`: Debug mode (default: true)
+- `HOST`: Host to bind to (default: 0.0.0.0)
+- `PORT`: Port to listen on (default: 8000)
+
+## Stopping the Application
+
+```bash
+# Stop the orchestrator
+docker compose down
+
+# Stop mock servers
+# Press Ctrl+C in each terminal running a mock server
 ```
 
 ## Development
 
-### Project Structure
+### Adding New Models
 
-```
-service-orchestrator/
-├── app/
-│   ├── api/          # API routes and endpoints
-│   ├── core/         # Core orchestrator logic
-│   ├── models/       # Pydantic models
-│   ├── services/     # Service implementations
-│   ├── scripts/      # Utility scripts
-│   └── config/       # Configuration files
-├── config/
-│   └── models/       # Model configurations
-├── logs/            # Application logs
-└── tests/           # Test files
-```
+1. Create a new model configuration file in `config/models/`
+2. Ensure the model server implements the required endpoints:
+   - `GET /health`: Health check endpoint
+   - `POST /predict`: Prediction endpoint
 
-### Logging
+### Mock Server Development
 
-The application uses a structured logging system that writes logs to both the console and files:
+The mock server (`app/mocks/model_mock.py`) can be customized to simulate different model behaviors:
 
-- Console output: All logs are displayed in the console with timestamps and log levels
-- File logs: Logs are written to the `logs` directory with the following structure:
-  - `app.log`: Main application log file
-  - `{module_name}.log`: Individual module log files (e.g., `model_registry.log`)
-
-Log files are automatically rotated and managed. The `logs` directory is git-ignored to prevent committing log files to the repository.
-
-### Key Components
-
-1. **Model Registry**: Manages model configurations and provides access to model metadata
-2. **Orchestrator**: Handles request routing and service coordination
-3. **Proxy Service**: Manages communication with individual model services
-4. **Circuit Breaker**: Implements failure detection and recovery
-5. **Health Monitor**: Tracks service health and availability
-
-### Development Workflow
-
-1. Start dummy model servers:
-
-   ```bash
-   python app/scripts/run_dummy_servers.py
-   ```
-
-2. Start the orchestrator:
-
-   ```bash
-   python app/main.py
-   ```
-
-3. Test model endpoints:
-
-   ```bash
-   curl -X POST http://localhost:8000/orchestrator/models/dummy-model-1 \
-     -H "Content-Type: application/json" \
-     -d '{"input": "test"}'
-   ```
-
-4. Monitor health:
-   ```bash
-   curl http://localhost:8000/health/details
-   ```
+- Modify the prediction response in the `predict` function
+- Add new endpoints as needed
+- Customize the model metadata
 
 ## Troubleshooting
 
-### Common Issues
+1. If ports are already in use:
 
-1. **Port Conflicts**:
+   - Check for running services: `lsof -i :<port>`
+   - Stop conflicting services or use different ports
 
-   - If you see "Address already in use" errors, kill existing processes:
-
-   ```bash
-   pkill -9 -f python
-   ```
-
-2. **Model Not Found**:
-
-   - Ensure model configurations exist in `config/models/`
-   - Check model IDs match between config and requests
-
-3. **Connection Errors**:
-   - Verify model servers are running
-   - Check endpoint URLs in model configurations
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+2. If the orchestrator can't connect to models:
+   - Verify model configurations in `config/models/`
+   - Check if model servers are running
+   - Verify network connectivity between services

@@ -1,0 +1,15 @@
+openapi:
+  version: 3.1.0
+
+apis:
+  main:
+    root: ./docs/api/orchestrator-api.yaml
+
+output:
+  html:
+    theme:
+      openapi:
+        sidebar:
+          backgroundColor: "#f8f9fa"
+        typography:
+          fontFamily: "Inter, sans-serif"

@@ -1,0 +1,214 @@
+openapi: 3.1.0
+info:
+  title: ML Service Orchestrator API
+  version: 1.0.0
+  description: |
+    API for orchestrating and managing ML model services.
+    This API allows tenants to:
+    - Submit prediction requests to specific models
+    - Get model health status
+    - View available models and their capabilities
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.example.com/v1
+    description: Production server
+
+components:
+  schemas:
+    PredictionRequest:
+      type: object
+      required:
+        - inputs
+      properties:
+        inputs:
+          type: object
+          description: Input data for the model
+          additionalProperties: true
+          example:
+            data: [1, 2, 3, 4, 5]
+        parameters:
+          type: object
+          description: Optional parameters for the prediction
+          additionalProperties: true
+          example:
+            threshold: 0.5
+            max_results: 10
+
+    PredictionResponse:
+      type: object
+      required:
+        - predictions
+        - model_info
+      properties:
+        predictions:
+          type: array
+          description: List of predictions
+          items:
+            type: object
+            properties:
+              value:
+                type: number
+                description: Predicted value
+              confidence:
+                type: number
+                description: Confidence score
+              label:
+                type: string
+                description: Predicted label
+        model_info:
+          type: object
+          properties:
+            model_id:
+              type: string
+              description: Unique identifier of the model
+            version:
+              type: string
+              description: Model version
+            timestamp:
+              type: string
+              format: date-time
+              description: Time of prediction
+        metadata:
+          type: object
+          description: Additional metadata about the prediction
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Error code
+            message:
+              type: string
+              description: Error message
+            details:
+              type: object
+              description: Additional error details
+              additionalProperties: true
+
+paths:
+  /orchestrator/models/{model_id}:
+    post:
+      summary: Submit prediction request to a specific model
+      description: |
+        Forwards a prediction request to the specified model and returns the results.
+        The model must be active and healthy for the request to succeed.
+      operationId: predict
+      tags:
+        - Predictions
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictionRequest"
+      responses:
+        "200":
+          description: Successful prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Model service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /health:
+    get:
+      summary: Check orchestrator health
+      description: Returns the health status of the orchestrator service
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - version
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  version:
+                    type: string
+                  components:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        details:
+                          type: object
+
+  /health/details:
+    get:
+      summary: Get detailed health information
+      description: Returns detailed health information for all components
+      operationId: detailedHealthCheck
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Detailed health information
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - version
+                  - components
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  version:
+                    type: string
+                  components:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                        details:
+                          type: object

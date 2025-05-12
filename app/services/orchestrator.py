@@ -1,42 +1,21 @@
 """
-Orchestrator service for managing model requests.
+Orchestrator for managing model requests.
 """
 
-import pybreaker
-import json
 from typing import Any, Dict, List, Optional, Union
+import json
+import logging
+import pybreaker
+from fastapi import Request, Response
+from httpx import Response as HttpxResponse
 
-from fastapi import HTTPException, Request, Response
-
-from app.models.config_models import ModelConfig
-from app.utils.logging import get_logger
 from app.core.exceptions import ModelRequestError, CircuitBreakerError
-from app.utils.http import HttpClient, build_url
+from app.models.config_models import ModelConfig
+from app.utils.http import HttpClient
+from app.utils.logging import get_logger
+from app.utils.error_handling import ModelErrorHandler, RetryConfig
 
 logger = get_logger(__name__)
-
-class CircuitBreakerListener(pybreaker.CircuitBreakerListener):
-    """Listener for circuit breaker events."""
-    
-    def on_success(self, cb: pybreaker.CircuitBreaker) -> None:
-        """Called when a call succeeds."""
-        logger.debug(f"Circuit breaker {cb.name} succeeded")
-    
-    def on_failure(self, cb: pybreaker.CircuitBreaker, exc: Exception) -> None:
-        """Called when a call fails."""
-        logger.debug(f"Circuit breaker {cb.name} failed: {exc}")
-    
-    def on_open(self, cb: pybreaker.CircuitBreaker) -> None:
-        """Called when the circuit breaker opens."""
-        logger.warning(f"Circuit breaker {cb.name} opened")
-    
-    def on_close(self, cb: pybreaker.CircuitBreaker) -> None:
-        """Called when the circuit breaker closes."""
-        logger.info(f"Circuit breaker {cb.name} closed")
-    
-    def on_half_open(self, cb: pybreaker.CircuitBreaker) -> None:
-        """Called when the circuit breaker half-opens."""
-        logger.info(f"Circuit breaker {cb.name} half-opened")
 
 class Orchestrator:
     """
@@ -52,6 +31,7 @@ class Orchestrator:
         """Initialize the orchestrator."""
         self.circuit_breakers: Dict[str, pybreaker.CircuitBreaker] = {}
         self._clients: Dict[str, HttpClient] = {}
+        self._error_handlers: Dict[str, ModelErrorHandler] = {}
     
     def _get_client(self, model_config: ModelConfig) -> HttpClient:
         """Get or create an HTTP client for a model."""
@@ -62,10 +42,26 @@ class Orchestrator:
                 timeout=model_config.timeout if hasattr(model_config, 'timeout') else 30.0
             )
         return self._clients[model_config.id]
+    
+    def _get_error_handler(self, model_config: ModelConfig) -> ModelErrorHandler:
+        """Get or create an error handler for a model."""
+        if not model_config.id:
+            raise ValueError("Model configuration must have an ID")
+        if model_config.id not in self._error_handlers:
+            retry_config = RetryConfig(
+                max_retries=model_config.max_retries,
+                initial_delay=1.0,
+                max_delay=10.0
+            )
+            self._error_handlers[model_config.id] = ModelErrorHandler(
+                model_id=model_config.id,
+                retry_config=retry_config
+            )
+        return self._error_handlers[model_config.id]
 
     def _build_target_url(self, base_url: str, path_suffix: str = "") -> str:
         """Build the target URL for a request."""
-        return build_url(base_url, path_suffix)
+        return f"{base_url.rstrip('/')}/{path_suffix.lstrip('/')}"
 
     def _get_exclude_exceptions(self, model_config: ModelConfig) -> List[type]:
         """Get the list of exceptions to exclude from circuit breaker."""
@@ -93,6 +89,7 @@ class Orchestrator:
         return self.circuit_breakers[model_config.id]
 
     async def _get_request_body(self, request: Request) -> Union[Dict[str, Any], Dict[str, bytes]]:
+        """Get the request body from a FastAPI request."""
         content_type = request.headers.get("content-type", "")
         if "application/json" in content_type:
             try:
@@ -190,9 +187,10 @@ class Orchestrator:
                 model_id=model_config.id
             )
 
-        # Get circuit breaker and HTTP client
+        # Get circuit breaker, HTTP client, and error handler
         circuit_breaker = self.get_circuit_breaker(model_config)
         http_client = self._get_client(model_config)
+        error_handler = self._get_error_handler(model_config)
 
         try:
             # Get request body
@@ -201,8 +199,9 @@ class Orchestrator:
             # Build target URL
             target_url = self._build_target_url(model_config.endpoint_url, path_suffix)
 
-            # Execute request through circuit breaker
-            return await circuit_breaker.call(
+            # Execute request through error handler and circuit breaker
+            return await error_handler.with_retry(
+                circuit_breaker.call,
                 self._execute_proxied_request,
                 http_client=http_client,
                 method=request.method,
@@ -223,4 +222,10 @@ class Orchestrator:
             raise ModelRequestError(
                 f"Failed to proxy request to model {model_config.id}: {str(e)}",
                 model_id=model_config.id
-            ) 
+            )
+    
+    def get_model_stats(self, model_id: str) -> Dict[str, Any]:
+        """Get statistics for a specific model."""
+        if model_id not in self._error_handlers:
+            raise ValueError(f"No error handler found for model {model_id}")
+        return self._error_handlers[model_id].get_stats() 

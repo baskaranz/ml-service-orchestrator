@@ -1,40 +1,27 @@
 """
-Orchestrator router for model requests.
+Orchestrator router for handling model requests.
 """
 
+from typing import Any, Dict
 import json
-from typing import Dict, Any
-
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
-from starlette.responses import Response
 
+from app.core.exceptions import ModelRequestError, CircuitBreakerError
 from app.models.config_models import ModelConfig
 from app.services.model_registry import ModelRegistryService, get_model_registry_service
 from app.services.orchestrator import Orchestrator
-from app.services.proxy import ProxyService
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
+router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
-router = APIRouter(
-    prefix="/models",
-    tags=["models"],
-    responses={404: {"description": "Model not found"}}
-)
+# Create a singleton instance of the orchestrator
+_orchestrator = Orchestrator()
 
-def get_orchestrator(
-    proxy_service: ProxyService = Depends(lambda: ProxyService())
-) -> Orchestrator:
-    """
-    Dependency for getting the orchestrator service.
-    
-    Args:
-        proxy_service: Proxy service
-        
-    Returns:
-        Orchestrator service
-    """
-    return Orchestrator()
+def get_orchestrator() -> Orchestrator:
+    """Get the orchestrator instance."""
+    return _orchestrator
 
 @router.post(
     "/{model_id}",
@@ -91,4 +78,41 @@ async def forward_request(
         raise HTTPException(
             status_code=500,
             detail=f"Error forwarding request: {str(e)}"
+        )
+
+@router.get(
+    "/{model_id}/stats",
+    response_model=Dict[str, Any],
+    summary="Get model statistics",
+    description="Get statistics and error handling information for a specific model"
+)
+async def get_model_stats(
+    model_id: str,
+    orchestrator: Orchestrator = Depends(get_orchestrator)
+) -> Dict[str, Any]:
+    """
+    Get statistics for a specific model.
+    
+    Args:
+        model_id: Model ID
+        orchestrator: Orchestrator service
+        
+    Returns:
+        Model statistics
+        
+    Raises:
+        HTTPException: If the model is not found or if there's an error
+    """
+    try:
+        return orchestrator.get_model_stats(model_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error getting stats for model '{model_id}': {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error getting model stats: {str(e)}"
         )

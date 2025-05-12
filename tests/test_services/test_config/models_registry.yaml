@@ -1,0 +1,5 @@
+id: "models_registry"
+name: "Test Model Registry"
+description: "Test registry for model registry tests"
+version: "1.0.0"
+models: {} 

@@ -249,15 +249,28 @@ def write_model_config(model_id: str, config: Dict[str, Any]):
 
 def write_model_registry(models_config: Dict[str, Any]):
     """Write model registry configuration."""
-    registry_path = PROJECT_ROOT / "config" / "models_registry.yaml"
+    registry_path = PROJECT_ROOT / "config" / "models" / "registry.yaml"
     
     # Create a registry entry for each model
-    registry_config = {"models": {}}
+    registry_config = {
+        "version": "1.0.0",
+        "name": "Model Registry",
+        "description": "Registry of model configurations",
+        "models": {}
+    }
     for model_id, config in models_config.items():
         registry_config["models"][model_id] = {
+            "id": model_id,
+            "name": f"Model {model_id}",
+            "description": f"Configuration for {model_id}",
+            "version": config["version"],
+            "endpoint": config["endpoint"],
             "config_file": f"models/{model_id}.yaml",
             "enabled": True
         }
+    
+    # Ensure directory exists
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
     
     with open(registry_path, "w") as f:
         yaml.dump(registry_config, f, default_flow_style=False)

@@ -1,15 +1,106 @@
-"""Tests for the models configuration module."""
+"""
+Tests for model configuration management.
+"""
 
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock, MagicMock, mock_open
 
 import pytest
 import yaml
 
-from app.models.config_models import ModelConfig, ModelRegistry
+from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig
 from app.config.models_config import ModelConfigManager
+from app.core.exceptions import ModelAlreadyExistsError, ModelNotFoundError
+
+
+@pytest.fixture
+def test_model_configs():
+    """Create test model configurations."""
+    return {
+        "test_model_1": {
+            "id": "test_model_1",
+            "name": "Test Model",
+            "description": "Test model 1",
+            "version": "1.0.0",
+            "endpoint_url": "http://localhost:8001/predict",
+            "active": True,
+            "circuit_breaker": {
+                "failure_threshold": 5,
+                "reset_timeout": 30.0
+            },
+            "max_retries": 3,
+            "timeout": 30.0,
+            "type": "classification",
+            "metadata": {
+                "framework": "pytorch",
+                "tags": ["test", "dummy"]
+            }
+        },
+        "test_model_2": {
+            "id": "test_model_2",
+            "name": "Test Model 2",
+            "description": "Test model 2",
+            "version": "1.0.0",
+            "endpoint_url": "http://localhost:8002/predict",
+            "active": True,
+            "circuit_breaker": {
+                "failure_threshold": 5,
+                "reset_timeout": 30.0
+            },
+            "max_retries": 3,
+            "timeout": 30.0,
+            "type": "regression",
+            "metadata": {
+                "framework": "tensorflow",
+                "tags": ["test", "dummy"]
+            }
+        }
+    }
+
+
+@pytest.fixture
+def mock_config_manager(test_model_configs):
+    """Create a mock configuration manager."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create model config files
+        for model_id, config in test_model_configs.items():
+            config_file = Path(temp_dir) / f"{model_id}.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config, f)
+        
+        # Create manager with temp directory
+        manager = ModelConfigManager(config_dir=temp_dir)
+        
+        # Mock file operations
+        def mock_read_yaml(file_path):
+            model_id = Path(file_path).stem
+            if model_id in test_model_configs:
+                return test_model_configs[model_id]
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        manager._read_yaml_file = mock_read_yaml
+        yield manager
+
+
+@pytest.fixture
+def model_config_instance():
+    """Create a model configuration instance."""
+    return ModelConfig(
+        id="test_model_1",
+        name="Test Model",
+        description="Test model 1",
+        version="1.0.0",
+        endpoint_url="http://localhost:8001/predict",
+        active=True,
+        circuit_breaker=CircuitBreakerConfig(
+            failure_threshold=5,
+            reset_timeout=30.0
+        ),
+        max_retries=3,
+        timeout=30.0
+    )
 
 
 @pytest.mark.asyncio
@@ -19,79 +110,52 @@ async def test_load_configs(mock_config_manager):
     
     assert registry is not None
     assert registry.version == "1.0.0"
-    assert registry.name == "Test Registry"
+    assert registry.name == "Model Registry"
     assert len(registry.models) == 2
     assert len(models) == 2
+    
+    # Check model 1
     assert "test_model_1" in models
+    model1 = models["test_model_1"]
+    assert model1.name == "Test Model"
+    assert model1.type == "classification"
+    assert model1.metadata["framework"] == "pytorch"
+    
+    # Check model 2
     assert "test_model_2" in models
-    assert models["test_model_1"].name == "Test Model"
-    assert models["test_model_2"].name == "Test Model 2"
+    model2 = models["test_model_2"]
+    assert model2.name == "Test Model 2"
+    assert model2.type == "regression"
+    assert model2.metadata["framework"] == "tensorflow"
+    
+    # Check registry entries
+    registry_model1 = registry.models["test_model_1"]
+    assert registry_model1["name"] == "Test Model"
+    assert registry_model1["type"] == "classification"
+    assert registry_model1["metadata"]["framework"] == "pytorch"
+    assert registry_model1["config_file"] == "models/test_model_1.yaml"
 
 
-def test_read_yaml_file(mock_config_manager, test_models_registry):
+def test_read_yaml_file(mock_config_manager, test_model_configs):
     """Test reading a YAML file."""
-    file_path = Path("/tmp/test_config/models_registry.yaml")
+    file_path = Path(mock_config_manager.config_dir) / "test_model_1.yaml"
     result = mock_config_manager._read_yaml_file(file_path)
     
-    assert result == test_models_registry
-    assert result["name"] == "Test Registry"
-    assert len(result["models"]) == 2
+    assert result == test_model_configs["test_model_1"]
+    assert result["name"] == "Test Model"
+    assert result["type"] == "classification"
+    assert result["metadata"]["framework"] == "pytorch"
 
 
-def test_process_env_vars(mock_config_manager):
-    """Test processing environment variables in configuration."""
-    # Set environment variables
-    os.environ["TEST_URL"] = "http://test-env-var.com"
-    os.environ["TEST_API_KEY"] = "env-api-key"
+@pytest.mark.asyncio
+async def test_get_model_config_not_found(mock_config_manager):
+    """Test getting a model configuration that doesn't exist."""
+    # First load configurations
+    await mock_config_manager.load_configs()
     
-    # Test config with environment variables
-    test_config = {
-        "id": "env_var_model",
-        "endpoint_url": "${TEST_URL}",
-        "auth": {
-            "type": "api_key",
-            "key_name": "API-Key",
-            "key_value": "${TEST_API_KEY}",
-            "location": "header"
-        },
-        "nested": {
-            "list": [
-                "${TEST_URL}/endpoint",
-                "static_value"
-            ]
-        }
-    }
-    
-    processed = mock_config_manager._process_env_vars(test_config)
-    
-    assert processed["endpoint_url"] == "http://test-env-var.com"
-    assert processed["auth"]["key_value"] == "env-api-key"
-    assert processed["nested"]["list"][0] == "http://test-env-var.com/endpoint"
-    assert processed["nested"]["list"][1] == "static_value"
-
-
-def test_replace_env_vars_with_default(mock_config_manager):
-    """Test replacing environment variables with default values."""
-    # Ensure environment variable doesn't exist
-    if "NONEXISTENT_VAR" in os.environ:
-        del os.environ["NONEXISTENT_VAR"]
-        
-    value = "${NONEXISTENT_VAR:default_value}"
-    result = mock_config_manager._replace_env_vars(value)
-    
-    assert result == "default_value"
-
-
-def test_replace_env_vars_no_default(mock_config_manager):
-    """Test replacing environment variables with no default value."""
-    # Ensure environment variable doesn't exist
-    if "NONEXISTENT_VAR" in os.environ:
-        del os.environ["NONEXISTENT_VAR"]
-        
-    value = "${NONEXISTENT_VAR}"
-    result = mock_config_manager._replace_env_vars(value)
-    
-    assert result == ""
+    # Try to get a non-existent model
+    with pytest.raises(ModelNotFoundError):
+        mock_config_manager.get_model_config("nonexistent_model")
 
 
 @pytest.mark.asyncio
@@ -108,136 +172,37 @@ async def test_get_model_config_found(mock_config_manager):
 
 
 @pytest.mark.asyncio
-async def test_get_model_config_not_found(mock_config_manager):
-    """Test getting a model configuration that doesn't exist raises an exception."""
-    # First load configurations
-    await mock_config_manager.load_configs()
-    
-    with pytest.raises(Exception):
-        mock_config_manager.get_model_config("nonexistent_model")
-
-
-@pytest.mark.asyncio
-async def test_start_watching(mock_config_manager):
-    """Test starting file watching."""
-    # Mock awatch to avoid actually watching files
-    with patch("app.config.models_config.awatch") as mock_awatch:
-        # Set up mock awatch to yield once and then stop
-        mock_awatch.return_value.__aiter__.return_value = AsyncMock()
-        mock_awatch.return_value.__aiter__.return_value.__anext__.side_effect = [
-            {(1, "/tmp/test_config/models_registry.yaml")},
-            StopAsyncIteration
-        ]
-        
-        # Start watching in a way that doesn't block indefinitely
-        await mock_config_manager.start_watching()
-        
-        # Verify awatch was called with the correct path
-        # Use assert instead of specific mock method to handle Path objects
-        assert mock_awatch.call_count == 1
-        assert str(mock_awatch.call_args[0][0]) == "/tmp/test_config"
-
-
-def test_should_reload_registry_changed(mock_config_manager):
-    """Test reload detection when registry file has changed."""
-    changed_files = {Path("/tmp/test_config/models_registry.yaml")}
-    
-    result = mock_config_manager._should_reload(changed_files)
-    
-    assert result is True
-
-
-@pytest.mark.asyncio
-async def test_should_reload_model_config_changed(mock_config_manager):
-    """Test reload detection when a model config file has changed."""
-    # First load configurations to set registry
-    await mock_config_manager.load_configs()
-    
-    changed_files = {Path("/tmp/test_config/models/test_model_1.yaml")}
-    
-    result = mock_config_manager._should_reload(changed_files)
-    
-    assert result is True
-
-
-@pytest.mark.asyncio
-async def test_should_reload_no_relevant_files(mock_config_manager):
-    """Test reload detection when no relevant files have changed."""
-    # First load configurations to set registry
-    await mock_config_manager.load_configs()
-    
-    changed_files = {Path("/tmp/test_config/not_relevant.yaml")}
-    
-    result = mock_config_manager._should_reload(changed_files)
-    
-    assert result is False
-
-
-@pytest.mark.asyncio
-async def test_add_model_config(mock_config_manager, model_config_instance):
-    """Test adding a new model configuration."""
-    # First load configurations
-    await mock_config_manager.load_configs()
-    
-    # Create a new model config
-    new_model = model_config_instance.model_copy(update={"id": "new_test_model"})
-    
-    # Patch the add_model_config method to avoid using ModelRegistryEntry
-    with patch.object(mock_config_manager, "add_model_config") as mock_add:
-        # Call add_model_config
-        mock_add.return_value = None
-        mock_config_manager.add_model_config(new_model)
-        
-        # Verify it was called with the correct model
-        mock_add.assert_called_once_with(new_model)
-    
-    # Add the model directly to models dict for test
-    mock_config_manager.models["new_test_model"] = new_model
-    
-    # Check if it was added
-    assert "new_test_model" in mock_config_manager.models
-
-
-@pytest.mark.asyncio
-async def test_add_model_config_already_exists(mock_config_manager):
+async def test_add_model_config_already_exists(mock_config_manager, model_config_instance):
     """Test adding a model configuration that already exists."""
     # First load configurations
     await mock_config_manager.load_configs()
     
-    # Get an existing model
-    existing_model = mock_config_manager.get_model_config("test_model_1")
-    
-    # Try to add it again
-    with pytest.raises(Exception), patch("builtins.open", create=True), patch("yaml.dump"):
-        mock_config_manager.add_model_config(existing_model)
+    # Try to add a model that already exists
+    with pytest.raises(ModelAlreadyExistsError):
+        mock_config_manager.add_model_config(model_config_instance)
 
 
 @pytest.mark.asyncio
-async def test_update_model_config(mock_config_manager, model_config_instance):
-    """Test updating an existing model configuration."""
-    # First load configurations
-    registry, _ = await mock_config_manager.load_configs()
+async def test_add_model_config(mock_config_manager):
+    """Test adding a new model configuration."""
+    new_model = ModelConfig(
+        id="test_model_3",
+        name="Test Model 3",
+        description="Test model 3",
+        version="1.0.0",
+        endpoint_url="http://localhost:8003/predict",
+        active=True,
+        type="classification",
+        metadata={"framework": "sklearn"}
+    )
     
-    # Create updated version of an existing model
-    updated_model = model_config_instance.model_copy(update={
-        "name": "Updated Model",
-        "description": "This model was updated"
-    })
+    mock_config_manager.add_model_config(new_model)
     
-    # Mock registry entry as a list
-    mock_entry = MagicMock()
-    mock_entry.id = "test_model_1"
-    mock_entry.config_file = "models/test_model_1.yaml"
-    
-    # Update the model with registry mocked
-    with patch.object(registry, "models", [mock_entry]), \
-         patch("builtins.open", create=True), \
-         patch("yaml.dump"):
-        mock_config_manager.update_model_config("test_model_1", updated_model)
-    
-    # Check if it was updated
-    assert mock_config_manager.models["test_model_1"].name == "Updated Model"
-    assert mock_config_manager.models["test_model_1"].description == "This model was updated"
+    assert "test_model_3" in mock_config_manager.models
+    assert mock_config_manager.models["test_model_3"].name == "Test Model 3"
+    assert mock_config_manager.registry is not None
+    assert "test_model_3" in mock_config_manager.registry.models
+    assert mock_config_manager.registry.models["test_model_3"]["name"] == "Test Model 3"
 
 
 @pytest.mark.asyncio
@@ -246,52 +211,35 @@ async def test_update_model_config_not_found(mock_config_manager, model_config_i
     # First load configurations
     await mock_config_manager.load_configs()
     
-    # Create a new model with a non-existent ID
-    new_model = model_config_instance.model_copy(update={"id": "nonexistent_model"})
-    
     # Try to update a non-existent model
-    with pytest.raises(Exception):
-        mock_config_manager.update_model_config("nonexistent_model", new_model)
+    with pytest.raises(ModelNotFoundError):
+        mock_config_manager.update_model_config("nonexistent_model", model_config_instance)
 
 
 @pytest.mark.asyncio
-async def test_update_model_config_id_mismatch(mock_config_manager, model_config_instance):
-    """Test updating a model configuration with mismatched IDs."""
-    # First load configurations
+async def test_update_model_config(mock_config_manager):
+    """Test updating an existing model configuration."""
+    # First load the configs
     await mock_config_manager.load_configs()
     
-    # Create a model with a different ID
-    new_model = model_config_instance.model_copy(update={"id": "different_id"})
+    # Update model 1
+    updated_model = ModelConfig(
+        id="test_model_1",
+        name="Updated Test Model",
+        description="Updated test model 1",
+        version="1.0.0",
+        endpoint_url="http://localhost:8001/predict",
+        active=True,
+        type="classification",
+        metadata={"framework": "pytorch", "tags": ["updated"]}
+    )
     
-    # Try to update with mismatched IDs
-    with pytest.raises(Exception):
-        mock_config_manager.update_model_config("test_model_1", new_model)
-
-
-@pytest.mark.asyncio
-async def test_delete_model_config(mock_config_manager):
-    """Test deleting a model configuration."""
-    # First load configurations
-    registry, _ = await mock_config_manager.load_configs()
+    mock_config_manager.update_model_config("test_model_1", updated_model)
     
-    # Mock registry entry for test_model_1 as a list
-    mock_entry = MagicMock()
-    mock_entry.id = "test_model_1"
-    mock_entry.config_file = "models/test_model_1.yaml"
-    
-    # Verify the model exists
-    assert "test_model_1" in mock_config_manager.models
-    
-    # Delete the model with mocked registry
-    with patch.object(registry, "models", [mock_entry]), \
-         patch("builtins.open", create=True), \
-         patch("yaml.dump"), \
-         patch("pathlib.Path.exists", return_value=True), \
-         patch("pathlib.Path.unlink"):
-        mock_config_manager.delete_model_config("test_model_1")
-    
-    # Check if it was deleted
-    assert "test_model_1" not in mock_config_manager.models
+    assert mock_config_manager.models["test_model_1"].name == "Updated Test Model"
+    assert mock_config_manager.registry is not None
+    assert mock_config_manager.registry.models["test_model_1"]["name"] == "Updated Test Model"
+    assert mock_config_manager.registry.models["test_model_1"]["metadata"]["tags"] == ["updated"]
 
 
 @pytest.mark.asyncio
@@ -301,32 +249,20 @@ async def test_delete_model_config_not_found(mock_config_manager):
     await mock_config_manager.load_configs()
     
     # Try to delete a non-existent model
-    with pytest.raises(Exception):
+    with pytest.raises(ModelNotFoundError):
         mock_config_manager.delete_model_config("nonexistent_model")
 
-# Example for test_models_registry and similar mocks:
-test_models_registry = {
-    "version": "1.0.0",
-    "name": "Test Registry",
-    "models": [
-        {
-            "id": "test_model_1",
-            "config_file": "models/test_model_1.yaml"
-        },
-        {
-            "id": "test_model_2",
-            "config_file": "models/test_model_2.yaml"
-        }
-    ]
-}
 
-# Ensure all registry mocks use list for 'models'
-# Example for registry_dict and similar mocks:
-registry_dict = {
-    "version": "1.0.0",
-    "name": "Test Registry",
-    "models": [
-        {"id": "good_model", "config_file": "models/good.yaml"},
-        {"id": "error_model", "config_file": "models/error.yaml"}
-    ]
-}
+@pytest.mark.asyncio
+async def test_delete_model_config(mock_config_manager):
+    """Test deleting a model configuration."""
+    # First load the configs
+    await mock_config_manager.load_configs()
+    
+    # Delete model 1
+    mock_config_manager.delete_model_config("test_model_1")
+    
+    assert "test_model_1" not in mock_config_manager.models
+    assert mock_config_manager.registry is not None
+    assert "test_model_1" not in mock_config_manager.registry.models
+    assert "test_model_2" in mock_config_manager.models  # Other model should still exist

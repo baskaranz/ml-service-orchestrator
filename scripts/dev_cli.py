@@ -244,12 +244,17 @@ def cmd_gen_model(args: argparse.Namespace) -> int:
         yaml.dump(model_config, f, default_flow_style=False)
     
     # Update models registry
-    registry_file = CONFIG_DIR / "models_registry.yaml"
+    registry_file = CONFIG_DIR / "models" / "registry.yaml"
     if registry_file.exists():
         with open(registry_file, "r") as f:
             registry = yaml.safe_load(f) or {}
     else:
-        registry = {"version": "1.0", "models": []}
+        registry = {
+            "version": "1.0",
+            "name": "Model Registry",
+            "description": "Registry of model configurations",
+            "models": {}
+        }
     
     # Check if model already exists in registry
     model_exists = False

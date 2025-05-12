@@ -19,6 +19,7 @@ def test_model_config_validation():
     """Test ModelConfig validation."""
     # Test with default values
     config = ModelConfig(
+        id="test_model_1",
         name="Test Model",
         description="A test model",
         endpoint_url="http://localhost:8000/predict",
@@ -33,6 +34,7 @@ def test_model_config_validation():
     assert config.endpoint_url == "http://localhost:8000/predict"
     # Test with custom values
     config2 = ModelConfig(
+        id="test_model_2",
         name="Another Model",
         description="Another test model",
         endpoint_url="http://localhost:8001/predict",
@@ -95,28 +97,24 @@ def test_auth_config_validation():
     # Test API key auth
     api_key_auth = AuthConfig(
         type=AuthType.API_KEY,
-        key_name="X-API-Key",
-        key_value="test-key",
-        username=None,
-        password=None,
-        location=AuthLocation.HEADER
+        header_name="X-API-Key",
+        value="test-key",
+        enabled=True
     )
     assert api_key_auth.type == AuthType.API_KEY
-    assert api_key_auth.key_name == "X-API-Key"
-    assert api_key_auth.key_value == "test-key"
+    assert api_key_auth.header_name == "X-API-Key"
+    assert api_key_auth.value == "test-key"
     
-    # Test basic auth
-    basic_auth = AuthConfig(
-        type=AuthType.BASIC_AUTH,
-        key_name=None,
-        key_value=None,
-        username="user",
-        password="pass",
-        location=None
+    # Test bearer token auth
+    bearer_auth = AuthConfig(
+        type=AuthType.BEARER_TOKEN,
+        header_name="Authorization",
+        value="Bearer test-token",
+        enabled=True
     )
-    assert basic_auth.type == AuthType.BASIC_AUTH
-    assert basic_auth.username == "user"
-    assert basic_auth.password == "pass"
+    assert bearer_auth.type == AuthType.BEARER_TOKEN
+    assert bearer_auth.header_name == "Authorization"
+    assert bearer_auth.value == "Bearer test-token"
 
 
 def test_cache_config_validation():
@@ -147,18 +145,36 @@ def test_cache_config_validation():
 
 def test_required_arguments_validation():
     """Test validation of required arguments."""
-    # Test ModelConfig required fields (omit id and endpoint_url)
+    # Test ModelConfig required fields (all present)
+    ModelConfig(
+        id="test_model_3",
+        name="Test Model",
+        description="Test model description",
+        version="1.0.0",
+        endpoint_url="http://localhost:8000/predict",
+        timeout=30.0,
+        max_retries=3,
+        active=True
+    )
+
+    # Now test missing id
+    model_args = dict(
+        name="Test Model",
+        description="Test model description",
+        version="1.0.0",
+        endpoint_url="http://localhost:8000/predict",
+        timeout=30.0,
+        max_retries=3,
+        active=True
+    )
     with pytest.raises(ValidationError) as exc_info:
-        ModelConfig(
-            name="Test Model",
-            description="Test model description",
-            version="1.0.0",
-            timeout=30.0,
-            max_retries=3,
-            transformations=None,
-            active=True
-        )
+        ModelConfig(**{k: v for k, v in model_args.items() if k != "id"})
     assert "id" in str(exc_info.value)
+
+    # Now test missing endpoint_url
+    model_args_with_id = dict(model_args, id="test_model_4")
+    with pytest.raises(ValidationError) as exc_info:
+        ModelConfig(**{k: v for k, v in model_args_with_id.items() if k != "endpoint_url"})
     assert "endpoint_url" in str(exc_info.value)
 
 

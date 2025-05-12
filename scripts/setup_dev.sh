@@ -77,7 +77,7 @@ WORKERS=1
 
 # Config file paths
 CONFIG_DIR=./config
-MODELS_REGISTRY_FILE=./config/models_registry.yaml
+MODELS_REGISTRY_FILE=./config/models/registry.yaml
 
 # Default service settings
 DEFAULT_TIMEOUT=30.0
@@ -102,19 +102,18 @@ else
 fi
 
 # Create default models registry file if it doesn't exist
-if [ ! -f "config/models_registry.yaml" ]; then
+if [ ! -f "config/models/registry.yaml" ]; then
     echo -e "${BLUE}Creating default models registry file...${NC}"
-    cat > config/models_registry.yaml << EOF
+    mkdir -p config/models
+    cat > config/models/registry.yaml << EOF
 # ML Orchestrator Models Registry
 version: "1.0"
-models:
-  - id: model_1
-    file: models/model_1.yaml
-  - id: model_2
-    file: models/model_2.yaml
+name: "Model Registry"
+description: "Registry of model configurations"
+models: {}
 EOF
 else
-    echo -e "${YELLOW}models_registry.yaml already exists.${NC}"
+    echo -e "${YELLOW}models/registry.yaml already exists.${NC}"
 fi
 
 # Create default model configuration files

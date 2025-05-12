@@ -21,7 +21,14 @@ async def test_direct_model_api(model_config: ModelConfig) -> Dict[str, Any]:
     """Test a model API directly."""
     async with aiohttp.ClientSession() as session:
         url = f"{model_config.endpoint_url}/predict"
-        headers = model_config.headers
+        headers = {}
+        if model_config.auth.enabled:
+            if model_config.auth.type == "api_key" and model_config.auth.header_name:
+                headers[model_config.auth.header_name] = model_config.auth.value
+            elif model_config.auth.type == "bearer_token":
+                headers["Authorization"] = f"Bearer {model_config.auth.value}"
+            elif model_config.auth.type == "basic_auth":
+                headers["Authorization"] = f"Basic {model_config.auth.value}"
         data = {"input": "test input"}
         
         try:

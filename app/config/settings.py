@@ -1,72 +1,123 @@
 """
-Global application settings module.
+Application settings configuration.
 """
 
-import os
 from pathlib import Path
-from typing import Dict, Optional, Union
-
-from pydantic import field_validator
+from typing import Optional, Dict, Any
+from pydantic import field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
-
-class AppSettings(BaseSettings):
-    """
-    Application settings loaded from environment variables.
-    """
+class BaseAppSettings(BaseSettings):
+    """Base application settings with common configuration."""
     
     # Application settings
-    APP_NAME: str = "ML Orchestrator Service"
-    APP_VERSION: str = "0.1.0"
-    DEBUG: bool = False
+    APP_NAME: str = Field(default="ML Orchestrator")
+    APP_VERSION: str = Field(default="1.0.0")
+    DEBUG: bool = Field(default=False)
     
     # Server settings
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
-    WORKERS: int = 1
+    HOST: str = Field(default="0.0.0.0")
+    PORT: int = Field(default=8000)
+    WORKERS: int = Field(default=1)
     
     # Config file paths
-    CONFIG_DIR: str = os.path.join(os.getcwd(), "config")
+    CONFIG_DIR: str = Field(default="config")
+    MODELS_DIR: str = Field(default="config/models")
     
     # Default service settings
-    DEFAULT_TIMEOUT: float = 30.0  # Default timeout in seconds
-    DEFAULT_MAX_RETRIES: int = 3   # Default retry count
+    DEFAULT_TIMEOUT: float = Field(default=30.0)
+    DEFAULT_MAX_RETRIES: int = Field(default=3)
     
     # Circuit breaker defaults
-    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
-    CIRCUIT_BREAKER_RESET_TIMEOUT: float = 30.0  # seconds
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=5)
+    CIRCUIT_BREAKER_RESET_TIMEOUT: float = Field(default=30.0)
     
     # Admin API settings
-    ADMIN_API_ENABLED: bool = True
-    ADMIN_API_KEY: Optional[str] = None
+    ADMIN_API_ENABLED: bool = Field(default=True)
+    ADMIN_API_KEY: Optional[str] = Field(default=None)
     
     # Metrics settings
-    METRICS_ENABLED: bool = False
+    METRICS_ENABLED: bool = Field(default=False)
     
     # Logging
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = Field(default="INFO")
     
-    @field_validator("CONFIG_DIR")
-    @classmethod
-    def validate_path_exists(cls, value: str, info) -> str:
-        """Validate that a path exists or can be created."""
-        path = Path(value)
-        
-        # Get the field name that's being validated
-        field_name = info.field_name
-        
-        # For directory (CONFIG_DIR), create it if it doesn't exist
-        if field_name == "CONFIG_DIR" and not path.exists():
-            path.mkdir(parents=True, exist_ok=True)
-            
-        return value
+    @field_validator("LOG_LEVEL")
+    def validate_log_level(cls, v: str) -> str:
+        """Validate log level."""
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if v.upper() not in valid_levels:
+            raise ValueError(f"Invalid log level. Must be one of: {', '.join(valid_levels)}")
+        return v.upper()
     
+    @field_validator("PORT")
+    def validate_port(cls, v: int) -> int:
+        """Validate port number."""
+        if not 1 <= v <= 65535:
+            raise ValueError("Port must be between 1 and 65535")
+        return v
+    
+    @field_validator("WORKERS")
+    def validate_workers(cls, v: int) -> int:
+        """Validate number of workers."""
+        if v < 1:
+            raise ValueError("Number of workers must be at least 1")
+        return v
+    
+    @field_validator("DEFAULT_TIMEOUT")
+    def validate_timeout(cls, v: float) -> float:
+        """Validate default timeout."""
+        if v <= 0:
+            raise ValueError("Default timeout must be greater than 0")
+        return v
+    
+    @field_validator("DEFAULT_MAX_RETRIES")
+    def validate_retries(cls, v: int) -> int:
+        """Validate default max retries."""
+        if v < 0:
+            raise ValueError("Default max retries must be non-negative")
+        return v
+
+class DevelopmentSettings(BaseAppSettings):
+    """Development environment settings."""
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file="config/env/development.cfg",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore"
     )
 
+class ProductionSettings(BaseAppSettings):
+    """Production environment settings."""
+    model_config = SettingsConfigDict(
+        env_file="config/env/production.cfg",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
+    )
 
-# Initialize settings
-settings = AppSettings()
+class TestSettings(BaseAppSettings):
+    """Test environment settings."""
+    model_config = SettingsConfigDict(
+        env_file="config/env/test.cfg",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
+    )
+
+def get_settings() -> BaseAppSettings:
+    """Get the appropriate settings instance based on environment."""
+    env = os.getenv("APP_ENV", "development").lower()
+    
+    settings_map = {
+        "development": DevelopmentSettings,
+        "production": ProductionSettings,
+        "test": TestSettings
+    }
+    
+    settings_class = settings_map.get(env, DevelopmentSettings)
+    return settings_class()
+
+# Global settings instance
+settings = get_settings() 

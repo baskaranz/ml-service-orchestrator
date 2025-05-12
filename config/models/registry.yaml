@@ -1,0 +1,133 @@
+version: "1.0.0"
+name: "Model Registry"
+description: "Registry of model configurations"
+models:
+  dummy-model-1:
+    id: "dummy-model-1"
+    name: "Dummy Model 1"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8001/predict"
+    config_file: "models/dummy-model-1.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-2:
+    id: "dummy-model-2"
+    name: "Dummy Model 2"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8002/predict"
+    config_file: "models/dummy-model-2.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-3:
+    id: "dummy-model-3"
+    name: "Dummy Model 3"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8003/predict"
+    config_file: "models/dummy-model-3.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-4:
+    id: "dummy-model-4"
+    name: "Dummy Model 4"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8004/predict"
+    config_file: "models/dummy-model-4.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-5:
+    id: "dummy-model-5"
+    name: "Dummy Model 5"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8005/predict"
+    config_file: "models/dummy-model-5.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-6:
+    id: "dummy-model-6"
+    name: "Dummy Model 6"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8006/predict"
+    config_file: "models/dummy-model-6.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-7:
+    id: "dummy-model-7"
+    name: "Dummy Model 7"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8007/predict"
+    config_file: "models/dummy-model-7.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-8:
+    id: "dummy-model-8"
+    name: "Dummy Model 8"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8008/predict"
+    config_file: "models/dummy-model-8.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-9:
+    id: "dummy-model-9"
+    name: "Dummy Model 9"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8009/predict"
+    config_file: "models/dummy-model-9.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]
+
+  dummy-model-10:
+    id: "dummy-model-10"
+    name: "Dummy Model 10"
+    description: "Test model for validation"
+    version: "1.0.0"
+    endpoint: "http://localhost:8010/predict"
+    config_file: "models/dummy-model-10.yaml"
+    type: "dummy"
+    status: "active"
+    metadata:
+      framework: "test"
+      tags: ["test", "dummy"]

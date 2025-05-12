@@ -4,31 +4,17 @@ from typing import Optional
 
 import pytest
 
-from app.config.settings import AppSettings
-
-
-class MockSettings(AppSettings):
-    """Mock settings for testing."""
-    
-    @classmethod
-    def validate_path_exists(cls, v: str, field: str) -> str:
-        """Override path validation for testing."""
-        return v
+from app.config.settings import BaseAppSettings, TestSettings
 
 
 @pytest.fixture
 def mock_settings():
     """Create mock settings for testing."""
-    # Override environment variables for testing
-    os.environ["APP_NAME"] = "Test ML Orchestrator"
-    os.environ["APP_VERSION"] = "test-1.0.0"
-    os.environ["CONFIG_DIR"] = "/tmp/test_config"
-    os.environ["REGISTRY_FILE"] = "/tmp/test_config/models_registry.yaml"
-    os.environ["ADMIN_API_KEY"] = "test-admin-key"
-    os.environ["LOG_LEVEL"] = "ERROR"
+    # Set test environment
+    os.environ["APP_ENV"] = "test"
     
     # Create and return settings
-    return MockSettings()
+    return TestSettings()
 
 
 @pytest.fixture(autouse=True)

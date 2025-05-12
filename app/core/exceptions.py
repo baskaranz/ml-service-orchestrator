@@ -69,6 +69,14 @@ class ModelNotFoundError(Exception):
         super().__init__(message)
 
 
+class ModelAlreadyExistsError(Exception):
+    """Exception raised when attempting to add a model that already exists."""
+    
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
 async def model_request_error_handler(request: Request, exc: ModelRequestError) -> JSONResponse:
     """Handle ModelRequestError exceptions."""
     logger.error(
@@ -134,6 +142,21 @@ async def model_not_found_error_handler(request: Request, exc: ModelNotFoundErro
     )
 
 
+async def model_already_exists_error_handler(request: Request, exc: ModelAlreadyExistsError) -> JSONResponse:
+    """Handle ModelAlreadyExistsError exceptions."""
+    logger.error(
+        f"Model already exists: {exc.message}",
+    )
+    
+    return JSONResponse(
+        status_code=409,
+        content={
+            "error": exc.message,
+            "code": "MODEL_ALREADY_EXISTS",
+        },
+    )
+
+
 async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     """
     Handle HTTPException with custom format.
@@ -161,4 +184,5 @@ def setup_exception_handlers(app: Any) -> None:
     app.add_exception_handler(CircuitBreakerError, circuit_breaker_error_handler)
     app.add_exception_handler(ConfigurationError, configuration_error_handler)
     app.add_exception_handler(ModelNotFoundError, model_not_found_error_handler)
+    app.add_exception_handler(ModelAlreadyExistsError, model_already_exists_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_error_handler)

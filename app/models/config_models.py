@@ -8,20 +8,23 @@ from pydantic import BaseModel, ConfigDict, Field, validator, AnyUrl
 
 class CircuitBreakerConfig(BaseModel):
     """Circuit breaker configuration."""
-    failure_threshold: int = Field(default=5, ge=1)
-    reset_timeout: float = Field(default=60.0, ge=1.0)
+    model_config = ConfigDict(populate_by_name=True)
+    failure_threshold: int = Field(default=5, description="Number of failures before opening circuit")
+    reset_timeout: float = Field(default=30.0, description="Time in seconds before attempting to close circuit")
     exclude_exceptions: List[str] = Field(default_factory=list, description="List of exception names to exclude from circuit breaker")
-    
+
     @validator("failure_threshold")
-    def validate_failure_threshold(cls, v):
+    def validate_failure_threshold(cls, v: int) -> int:
+        """Validate failure threshold."""
         if v < 1:
             raise ValueError("Failure threshold must be at least 1")
         return v
-    
+
     @validator("reset_timeout")
-    def validate_reset_timeout(cls, v):
-        if v < 1.0:
-            raise ValueError("Reset timeout must be at least 1 second")
+    def validate_reset_timeout(cls, v: float) -> float:
+        """Validate reset timeout."""
+        if v <= 0:
+            raise ValueError("Reset timeout must be positive")
         return v
 
 class AuthType(str, Enum):
@@ -35,14 +38,12 @@ class AuthLocation(str, Enum):
     QUERY = "query"
 
 class AuthConfig(BaseModel):
-    """Authentication configuration for a model endpoint."""
-    model_config = ConfigDict(populate_by_name=True)
-    type: AuthType = Field(AuthType.NONE, description="Authentication type")
-    key_name: Optional[str] = Field(None, description="Name of the key or header")
-    key_value: Optional[str] = Field(None, description="Value of the key or token")
-    username: Optional[str] = Field(None, description="Username for basic auth")
-    password: Optional[str] = Field(None, description="Password for basic auth")
-    location: Optional[AuthLocation] = Field(None, description="Location of the auth parameter")
+    """Authentication configuration."""
+    enabled: bool = Field(default=False, description="Whether authentication is enabled")
+    type: str = Field(default="api_key", description="Authentication type (api_key, bearer, basic)")
+    header_name: Optional[str] = Field(default=None, description="Header name for API key")
+    query_param: Optional[str] = Field(default=None, description="Query parameter name for API key")
+    value: Optional[str] = Field(default=None, description="Authentication value (API key, token, etc.)")
 
 class CacheConfig(BaseModel):
     """Caching configuration for model responses."""
@@ -60,47 +61,46 @@ class TransformationConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     """Model configuration."""
-    id: Optional[str] = None
-    name: str
-    description: str
-    version: str
-    endpoint_url: str
-    active: bool = True
-    circuit_breaker: Optional[CircuitBreakerConfig] = None
-    timeout: float = Field(30.0, description="Request timeout in seconds")
-    max_retries: int = Field(3, description="Maximum number of retries")
-    headers: Dict[str, str] = Field(default_factory=dict, description="Default headers for requests")
-    
+    id: str = Field(..., description="Unique identifier for the model")
+    name: str = Field(..., description="Display name of the model")
+    description: str = Field(..., description="Description of the model")
+    version: str = Field(..., description="Version of the model")
+    endpoint_url: str = Field(..., description="URL of the model endpoint")
+    active: bool = Field(default=True, description="Whether the model is active")
+    timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    max_retries: int = Field(default=3, description="Maximum number of retries")
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
+    type: Optional[str] = Field(default=None, description="Type of the model (e.g., classification, regression)")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the model")
+
     @validator("endpoint_url")
-    def validate_endpoint_url(cls, v):
-        if v != "dummy" and not v.startswith(("http://", "https://")):
-            raise ValueError("Endpoint URL must start with http://, https://, or be 'dummy'")
-        return v
-    
-    @validator("timeout")
-    def validate_timeout(cls, v):
-        if v <= 0:
-            raise ValueError("Timeout must be greater than 0")
-        return v
-    
-    @validator("max_retries")
-    def validate_max_retries(cls, v):
-        if v < 0:
-            raise ValueError("Max retries must be non-negative")
+    def validate_endpoint_url(cls, v: str) -> str:
+        """Validate endpoint URL."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("Endpoint URL must start with http:// or https://")
         return v
 
-class ModelRegistryEntry(BaseModel):
-    """Model registry entry."""
-    id: str
-    config_file: str
+    @validator("timeout")
+    def validate_timeout(cls, v: float) -> float:
+        """Validate timeout."""
+        if v <= 0:
+            raise ValueError("Timeout must be positive")
+        return v
+
+    @validator("max_retries")
+    def validate_max_retries(cls, v: int) -> int:
+        """Validate max retries."""
+        if v < 0:
+            raise ValueError("Max retries cannot be negative")
+        return v
 
 class ModelRegistry(BaseModel):
-    """Model registry."""
-    model_config = ConfigDict(populate_by_name=True, extra='allow', frozen=False)
-    version: str
-    name: str
-    description: str
-    models: Dict[str, ModelRegistryEntry] = Field(default_factory=dict)
+    """Model registry configuration."""
+    version: str = Field(..., description="Version of the registry")
+    name: str = Field(..., description="Name of the registry")
+    description: str = Field(..., description="Description of the registry")
+    models: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="Dictionary of model configurations")
 
 class GlobalSettings(BaseModel):
     """Global settings for all models."""

@@ -6,6 +6,7 @@ import asyncio
 import yaml
 from unittest.mock import MagicMock, AsyncMock, patch
 from typing import Generator
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -55,7 +56,9 @@ def model_config_instance():
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=3,
             reset_timeout=15.0
-        )
+        ),
+        timeout=30.0,
+        max_retries=3
     )
 
 
@@ -63,6 +66,7 @@ def model_config_instance():
 def model_configs(model_config_instance):
     """Create a list of model configs for testing."""
     model_2 = ModelConfig(
+        id="test_model_2",
         name="Test Model 2",
         description="Another test model for unit tests",
         endpoint_url="http://localhost:8889/test2",
@@ -71,37 +75,79 @@ def model_configs(model_config_instance):
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=4,
             reset_timeout=20.0
-        )
+        ),
+        timeout=30.0,
+        max_retries=3
     )
     return [model_config_instance, model_2]
 
 
 @pytest.fixture
-def mock_config_dir():
-    """Get the mock config directory path."""
-    return "/tmp/test_config"
+def mock_config_dir(tmp_path):
+    """Create and return a temporary config directory for testing."""
+    config_dir = tmp_path / "test_config"
+    models_dir = config_dir / "models"
+    models_dir.mkdir(parents=True)
+    return config_dir
 
 
 @pytest.fixture
 def test_models_registry():
-    """Load the test models registry from file."""
-    with open("/tmp/test_config/models_registry.yaml", "r") as f:
-        return yaml.safe_load(f)
+    """Create a test models registry."""
+    return {
+        "id": "models_registry",
+        "version": "1.0.0",
+        "name": "Test Registry",
+        "description": "Test registry for unit tests",
+        "models": {
+            "test_model_1": {
+                "id": "test_model_1",
+                "config_file": "models/test_model_1.yaml"
+            },
+            "test_model_2": {
+                "id": "test_model_2",
+                "config_file": "models/test_model_2.yaml"
+            }
+        }
+    }
 
 
 @pytest.fixture
 def test_model_config_1():
-    """Load the test model 1 config from file."""
-    with open("/tmp/test_config/models/test_model_1.yaml", "r") as f:
-        return yaml.safe_load(f)
+    """Create a test model configuration."""
+    return {
+        "id": "test_model_1",
+        "name": "Test Model",
+        "description": "A test model for unit tests",
+        "endpoint_url": "http://localhost:8888/test",
+        "version": "1.0.0",
+        "active": True,
+        "circuit_breaker": {
+            "failure_threshold": 3,
+            "reset_timeout": 15.0
+        },
+        "max_retries": 3,
+        "timeout": 30.0
+    }
 
 
 @pytest.fixture
-def mock_config_manager():
-    """Create a mock ModelConfigManager for testing."""
+def mock_config_manager(mock_config_dir, test_models_registry, test_model_config_1):
+    """Create a mock ModelConfigManager with test data."""
+    # Write test registry file
+    registry_file = mock_config_dir / "models" / "registry.yaml"
+    registry_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(registry_file, "w") as f:
+        yaml.dump(test_models_registry, f)
+    
+    # Write test model config
+    model_file = mock_config_dir / "models" / "test_model_1.yaml"
+    with open(model_file, "w") as f:
+        yaml.dump(test_model_config_1, f)
+    
+    # Create and return config manager
     manager = ModelConfigManager(
-        config_dir="/tmp/test_config",
-        registry_file="/tmp/test_config/models_registry.yaml"
+        config_dir=str(mock_config_dir)
     )
     return manager
 
@@ -119,7 +165,7 @@ def mock_proxy_service():
 
 
 @pytest.fixture
-async def async_client(app):
+async def async_client():
     """Create an async HTTP client for testing."""
-    async with AsyncClient(app=app, base_url="http://test") as async_client:
-        yield async_client
+    async with AsyncClient(base_url="http://test") as client:
+        yield client

@@ -27,6 +27,8 @@ class ModelSummary(BaseModel):
     description: str
     version: str
     active: bool = True
+    type: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class ErrorResponse(BaseModel):
     """Error response model."""

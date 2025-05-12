@@ -12,8 +12,6 @@ from pydantic import BaseModel
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config.settings import settings
-
 
 def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """Get a logger with the specified name and level."""

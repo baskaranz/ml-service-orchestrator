@@ -47,10 +47,10 @@ This script automatically:
 
 - Creates FastAPI applications for each dummy model
 - Generates model configuration files in `config/models/`
-- Updates the model registry at `config/models_registry.yaml`
+- Updates the model registry at `config/models/registry.yaml`
 - Creates a startup script at `scripts/start_dummy_models.py`
 
-The generated configurations are saved in `config/dummy_models.json`.
+The generated configurations are saved in `config/models/` directory as YAML files.
 
 ## Running Dummy Models
 
@@ -88,7 +88,7 @@ make run
 
 The orchestrator will:
 
-- Load model configurations from `config/models_registry.yaml`
+- Load model configurations from `config/models/registry.yaml`
 - Connect to all the dummy model APIs
 - Expose endpoints for accessing the models through the orchestrator
 
@@ -277,7 +277,7 @@ If the models fail to start:
 
 ```bash
 # Check the model configurations
-cat config/dummy_models.json
+cat config/models/dummy-model-1.yaml
 
 # Try running a single model in the foreground to see any errors
 python -m scripts.create_dummy_models --run-server --model-index 0
@@ -288,8 +288,8 @@ python -m scripts.create_dummy_models --run-server --model-index 0
 If the orchestrator can't connect to the dummy models:
 
 1. Make sure the dummy models are running (`ps aux | grep create_dummy_models`)
-2. Check the model registry configuration (`cat config/models_registry.yaml`)
-3. Verify the model configuration files (`cat config/models/model_1.yaml`)
+2. Check the model registry configuration (`cat config/models/registry.yaml`)
+3. Verify the model configuration files (`cat config/models/dummy-model-1.yaml`)
 4. Ensure the ports match between the running models and the configuration
 
 ### Testing Model Health Independently
@@ -316,4 +316,4 @@ If you want models with fewer errors, create new ones with a lower error rate:
 python scripts/create_dummy_models.py --num-models 1 --port 8003
 ```
 
-Then edit `config/dummy_models.json` to set `error_rate` to a lower value (e.g., 0.01 for 1% errors).
+Then edit the corresponding model configuration in `config/models/` directory to set `error_rate` to a lower value (e.g., 0.01 for 1% errors).

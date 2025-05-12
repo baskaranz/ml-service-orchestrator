@@ -90,11 +90,13 @@ mypy app
 We follow a feature branch workflow:
 
 1. Create a branch for your feature or fix:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
 
 2. Make changes, commit with descriptive messages, and push:
+
    ```bash
    git add .
    git commit -m "Add feature xyz"
@@ -113,6 +115,7 @@ Follow these guidelines for commit messages:
 - Reference issues and pull requests after the first line
 
 Example:
+
 ```
 Add circuit breaker pattern to model requests
 
@@ -207,21 +210,25 @@ If you need help, you can:
 ### Key Components
 
 1. **API Layer** (`app/api/`):
+
    - API routes and endpoint handlers
    - Request/response models
    - Dependency injection
 
 2. **Service Layer** (`app/services/`):
+
    - Business logic implementation
    - Model registry service
    - Proxy service for model requests
 
 3. **Core Layer** (`app/core/`):
+
    - Core domain models
    - Orchestrator implementation
    - Exception handling
 
 4. **Configuration** (`app/config/`):
+
    - Application settings
    - Model configuration management
 
@@ -233,3 +240,27 @@ If you need help, you can:
 ## License
 
 By contributing to this project, you agree that your contributions will be licensed under the project's license.
+
+## Configuration and Testing System Updates
+
+### Configuration Management
+
+- The application uses Pydantic's `BaseSettings` for configuration, defined in `app/config/settings.py`.
+- Environment variables and config files in `config/env/` are supported. `.env` files are not required; settings can be overridden via environment variables or config files.
+- Default values are provided in the settings classes, making local development and CI setup easier.
+
+### Test Settings
+
+- Test settings are managed via the `TestSettings` class in `tests/mocks/settings.py`.
+- The test environment is set automatically (`APP_ENV=test`), and test-specific config files can be placed in `config/env/test.cfg` if needed.
+
+### Model Registry
+
+- The legacy `MODELS_REGISTRY_FILE` has been removed. The application now uses per-model config files in the `config/models/` directory.
+- Each model has its own YAML or JSON config file, improving modularity and maintainability.
+
+### Deprecation Warnings
+
+- You may see warnings about Pydantic V1 `@validator` usage and FastAPI's `@app.on_event` deprecation. These do not affect functionality but should be addressed in future updates:
+  - Migrate to Pydantic V2 `@field_validator`.
+  - Use FastAPI lifespan event handlers instead of `@app.on_event`.

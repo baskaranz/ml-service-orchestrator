@@ -12,6 +12,7 @@ The script creates:
 4. A startup script to run all the dummy models at once
 
 Each dummy model API provides:
+
 - A `/predict` endpoint for inference
 - A `/health` endpoint for health checks
 - A `/info` endpoint for model information
@@ -61,6 +62,7 @@ Each dummy model API provides the following endpoints:
 Main inference endpoint that accepts model inputs and returns outputs.
 
 **Request:**
+
 ```json
 {
   "inputs": "your input text or data",
@@ -72,6 +74,7 @@ Main inference endpoint that accepts model inputs and returns outputs.
 ```
 
 **Response:**
+
 ```json
 {
   "outputs": "processed result",
@@ -94,6 +97,7 @@ Main inference endpoint that accepts model inputs and returns outputs.
 Health check endpoint to verify the model is running.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -107,6 +111,7 @@ Health check endpoint to verify the model is running.
 Model information endpoint.
 
 **Response:**
+
 ```json
 {
   "model_id": "model_name",
@@ -134,7 +139,7 @@ python -m scripts.create_dummy_models --run-server --model-index 1
 
 ### Modifying Model Behavior
 
-The model configurations are saved in `config/dummy_models.json`. You can edit this file to change the latency, error rate, or other properties of the models.
+The model configurations are saved in `config/models/` directory as YAML files. You can edit these files to change the latency, error rate, or other properties of the models.
 
 ### Testing with curl
 
@@ -157,9 +162,8 @@ curl -X POST http://localhost:8001/predict \
 
 The script generates the following files:
 
-- `config/dummy_models.json`: Model configurations
-- `config/models/model_name.yaml`: Model configuration for the orchestrator
-- `config/models_registry.yaml`: Model registry configuration
+- `config/models/`: Model configuration files (YAML)
+- `config/models/registry.yaml`: Model registry configuration
 - `scripts/start_dummy_models.sh`: Startup script for all models
 
 ## Troubleshooting

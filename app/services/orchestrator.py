@@ -92,7 +92,7 @@ class Orchestrator:
             )
         return self.circuit_breakers[model_config.id]
 
-    async def _get_request_body(self, request: Request) -> Union[Dict[str, Any], bytes]:
+    async def _get_request_body(self, request: Request) -> Union[Dict[str, Any], Dict[str, bytes]]:
         content_type = request.headers.get("content-type", "")
         if "application/json" in content_type:
             try:
@@ -103,7 +103,8 @@ class Orchestrator:
             except Exception as e:
                 raise ModelRequestError(f"Failed to parse request body: {str(e)}")
         else:
-            return await request.body()
+            body = await request.body()
+            return {"raw": body}
 
     async def _execute_proxied_request(
         self,
@@ -111,7 +112,7 @@ class Orchestrator:
         method: str,
         url: str,
         headers: Dict[str, str],
-        data: Union[Dict[str, Any], bytes],
+        data: Union[Dict[str, Any], Dict[str, bytes]],
         params: Dict[str, Any],
         model_id: str
     ) -> Response:
@@ -131,12 +132,12 @@ class Orchestrator:
             else:
                 logger.debug(f"Request data (other): {data}")
 
-            if isinstance(data, bytes):
+            if isinstance(data, dict) and "raw" in data:
                 status_code, response_body, response_headers = await http_client.request(
                     method=method,
                     url=url,
                     headers=headers,
-                    content=data,
+                    content=data["raw"],
                     params=params
                 )
             else:

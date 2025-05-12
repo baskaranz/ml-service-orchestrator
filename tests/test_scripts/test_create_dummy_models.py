@@ -101,8 +101,8 @@ class TestCreateDummyModels:
         config_dir.mkdir(parents=True, exist_ok=True)
         
         models_config = {
-            "test_model1": {"version": "1.0.0"},
-            "test_model2": {"version": "1.0.0"}
+            "test_model1": {"version": "1.0.0", "endpoint": "http://localhost:8001/predict"},
+            "test_model2": {"version": "1.0.0", "endpoint": "http://localhost:8002/predict"}
         }
         
         registry_path = write_model_registry(models_config)

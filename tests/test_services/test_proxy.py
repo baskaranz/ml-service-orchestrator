@@ -39,7 +39,7 @@ def mock_request():
 
 
 @pytest.mark.asyncio
-async def test_proxy_to_model_success(proxy_service, mock_request, model_config_instance):
+async def test_proxy_to_model_success(proxy_service, mock_request, model_config_instance, llm_provider_config):
     """Test successful proxying to a model endpoint."""
     # Mock orchestrator's proxy_request method
     proxy_service.orchestrator.proxy_request = AsyncMock(
@@ -69,7 +69,7 @@ async def test_proxy_to_model_success(proxy_service, mock_request, model_config_
 
 
 @pytest.mark.asyncio
-async def test_proxy_to_model_not_found(proxy_service, mock_request):
+async def test_proxy_to_model_not_found(proxy_service, mock_request, llm_provider_config):
     """Test proxying to a model that doesn't exist."""
     # Mock model registry to raise exception for non-existent model
     proxy_service.model_registry.get_model_config = MagicMock(
@@ -82,7 +82,7 @@ async def test_proxy_to_model_not_found(proxy_service, mock_request):
 
 
 @pytest.mark.asyncio
-async def test_proxy_to_model_error(proxy_service, mock_request, model_config_instance):
+async def test_proxy_to_model_error(proxy_service, mock_request, model_config_instance, llm_provider_config):
     """Test handling errors from the model endpoint."""
     # Mock model registry's get_model_config method
     proxy_service.model_registry.get_model_config = MagicMock(return_value=model_config_instance)
@@ -104,7 +104,7 @@ async def test_proxy_to_model_error(proxy_service, mock_request, model_config_in
 
 
 @pytest.mark.asyncio
-async def test_proxy_to_model_circuit_breaker(proxy_service, mock_request, model_config_instance):
+async def test_proxy_to_model_circuit_breaker(proxy_service, mock_request, model_config_instance, llm_provider_config):
     """Test handling circuit breaker errors."""
     # Mock model registry's get_model_config method
     proxy_service.model_registry.get_model_config = MagicMock(return_value=model_config_instance)
@@ -125,7 +125,7 @@ async def test_proxy_to_model_circuit_breaker(proxy_service, mock_request, model
 
 
 @pytest.mark.asyncio
-async def test_proxy_to_model_unexpected_error(proxy_service, mock_request, model_config_instance):
+async def test_proxy_to_model_unexpected_error(proxy_service, mock_request, model_config_instance, llm_provider_config):
     """Test handling unexpected errors."""
     # Mock model registry's get_model_config method
     proxy_service.model_registry.get_model_config = MagicMock(return_value=model_config_instance)
@@ -144,7 +144,7 @@ async def test_proxy_to_model_unexpected_error(proxy_service, mock_request, mode
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_circuit_breaker(mock_orchestrator, model_config_instance, mock_request):
+async def test_orchestrator_circuit_breaker(mock_orchestrator, model_config_instance, mock_request, llm_provider_config):
     """Test the circuit breaker in the orchestrator."""
     # Mock the circuit breaker
     mock_circuit_breaker = MagicMock()
@@ -158,7 +158,7 @@ async def test_orchestrator_circuit_breaker(mock_orchestrator, model_config_inst
 
     # Call proxy_request and expect CircuitBreakerError
     with pytest.raises(CircuitBreakerError) as exc_info:
-        await mock_orchestrator.proxy_request(model_config_instance, mock_request, "predict")
+        await mock_orchestrator.proxy_request(model_config_instance, mock_request, "predict", llm_provider=llm_provider_config)
     assert exc_info.value.model_id == "test_model_1"
     # Optionally, check the error message
     assert "circuit breaker" in (exc_info.value.message or "").lower()

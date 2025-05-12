@@ -10,6 +10,7 @@ import asyncio
 
 from app.utils.error_handling.llm_errors import LLMErrorClassifier
 from app.utils.logging import get_logger
+from app.models.config_models import LLMProviderConfig
 
 logger = get_logger(__name__)
 
@@ -114,12 +115,12 @@ class LLMCircuitBreaker(pybreaker.CircuitBreaker):
     def __init__(
         self,
         *args,
-        model_name: str = "gpt-3.5-turbo",
+        llm_config: Optional[LLMProviderConfig] = None,
         **kwargs
     ):
         """Initialize the LLM circuit breaker."""
         super().__init__(*args, **kwargs)
-        self.error_classifier = LLMErrorClassifier(model_name=model_name)
+        self.error_classifier = LLMErrorClassifier(config=llm_config)
         self._state = LLMCircuitBreakerState(self, self.current_state)
     
     def get_error_patterns(self) -> Dict[str, Any]:

@@ -7,24 +7,16 @@ import asyncio
 import logging
 from functools import wraps
 from datetime import datetime
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-class RetryConfig:
+class RetryConfig(BaseModel):
     """Configuration for retry behavior."""
-    def __init__(
-        self,
-        max_retries: int = 3,
-        initial_delay: float = 1.0,
-        max_delay: float = 10.0,
-        exponential_base: float = 2.0,
-        jitter: bool = True
-    ):
-        self.max_retries = max_retries
-        self.initial_delay = initial_delay
-        self.max_delay = max_delay
-        self.exponential_base = exponential_base
-        self.jitter = jitter
+    max_retries: int = 3
+    initial_delay: float = 1.0
+    max_delay: float = 30.0
+    backoff_factor: float = 2.0
 
 class BaseErrorHandler:
     """Base class for error handling with retry functionality."""
@@ -38,6 +30,7 @@ class BaseErrorHandler:
         self.excluded_exceptions = excluded_exceptions or []
         self._error_counts: Dict[str, int] = {}
         self._last_error_times: Dict[str, datetime] = {}
+        self.retry_count = 0
     
     def _should_retry(self, error: Exception) -> bool:
         """Determine if the error should trigger a retry."""
@@ -53,18 +46,10 @@ class BaseErrorHandler:
         
         return True
     
-    def _get_retry_delay(self, attempt: int) -> float:
-        """Calculate the delay before the next retry attempt."""
-        delay = min(
-            self.retry_config.initial_delay * (self.retry_config.exponential_base ** attempt),
-            self.retry_config.max_delay
-        )
-        
-        if self.retry_config.jitter:
-            import random
-            delay *= random.uniform(0.5, 1.5)
-        
-        return delay
+    def _get_retry_delay(self) -> float:
+        """Calculate the delay for the next retry."""
+        delay = self.retry_config.initial_delay * (self.retry_config.backoff_factor ** self.retry_count)
+        return min(delay, self.retry_config.max_delay)
     
     def _update_error_stats(self, error: Exception):
         """Update error statistics."""
@@ -123,7 +108,7 @@ class BaseErrorHandler:
                     raise
                 
                 self._update_error_stats(e)
-                delay = self._get_retry_delay(attempt)
+                delay = self._get_retry_delay()
                 
                 logger.warning(
                     f"Attempt {attempt + 1} failed for {func.__name__}. "
@@ -149,4 +134,12 @@ class BaseErrorHandler:
             
             return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
         
-        return decorator 
+        return decorator
+
+    def reset_retry_count(self) -> None:
+        """Reset the retry counter."""
+        self.retry_count = 0
+    
+    def increment_retry_count(self) -> None:
+        """Increment the retry counter."""
+        self.retry_count += 1 

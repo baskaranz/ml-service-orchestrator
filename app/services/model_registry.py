@@ -180,7 +180,8 @@ class ModelRegistryService:
                     "config_file": f"models/{model_config.id}.yaml",
                     "active": model_config.active,
                     "type": model_config.type,
-                    "metadata": model_config.metadata
+                    "metadata": model_config.metadata,
+                    "llm_provider": model_config.llm_provider.type if model_config.llm_provider else None
                 }
         # Keep self.registry.models in sync
         if self.config_manager.registry:
@@ -217,7 +218,8 @@ class ModelRegistryService:
                     "config_file": f"models/{model_config.id}.yaml",
                     "active": model_config.active,
                     "type": model_config.type,
-                    "metadata": model_config.metadata
+                    "metadata": model_config.metadata,
+                    "llm_provider": model_config.llm_provider.type if model_config.llm_provider else None
                 }
         # Keep self.registry.models in sync
         if self.config_manager.registry:

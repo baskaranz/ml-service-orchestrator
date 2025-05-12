@@ -8,7 +8,7 @@ import shutil
 import pytest
 from fastapi import FastAPI
 
-from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig
+from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig, LLMProviderConfig
 from app.schemas.api_models import ModelSummary
 from app.services.model_registry import ModelRegistryService, setup_model_registry
 from app.core.exceptions import ModelAlreadyExistsError
@@ -41,6 +41,18 @@ async def started_registry():
     yield service
     await service.shutdown()
     shutil.rmtree(temp_dir)
+
+
+@pytest.fixture
+def llm_provider_config() -> LLMProviderConfig:
+    """Create a test LLM provider configuration."""
+    return LLMProviderConfig(
+        type="huggingface",
+        model_name="test-model",
+        timeout=30,
+        max_retries=3,
+        api_key="test-key"
+    )
 
 
 @pytest.mark.asyncio
@@ -109,7 +121,7 @@ async def test_reload_configs_empty(started_registry):
 
 
 @pytest.mark.asyncio
-async def test_list_models_with_transformations(started_registry):
+async def test_list_models_with_transformations(started_registry, llm_provider_config):
     """Test listing models with transformations."""
     service = await anext(started_registry)
     # Clear existing models for isolation and ensure real dicts
@@ -133,7 +145,8 @@ async def test_list_models_with_transformations(started_registry):
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
             reset_timeout=30.0
-        )
+        ),
+        llm_provider=llm_provider_config
     )
     service.config_manager.models["test_model"] = model
     # List models
@@ -148,10 +161,9 @@ async def test_list_models_with_transformations(started_registry):
 
 
 @pytest.mark.asyncio
-async def test_add_model(started_registry):
+async def test_add_model(started_registry, llm_provider_config):
     """Test adding a new model."""
     service = await anext(started_registry)
-    
     # Create a new model
     model = ModelConfig(
         id="new_model",
@@ -165,12 +177,11 @@ async def test_add_model(started_registry):
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
             reset_timeout=30.0
-        )
+        ),
+        llm_provider=llm_provider_config
     )
-    
     # Add the model
     added_model = await service.add_model("new_model", model)
-    
     # Verify the model was added
     assert added_model.id == "new_model"
     assert "new_model" in service.config_manager.models
@@ -178,10 +189,9 @@ async def test_add_model(started_registry):
 
 
 @pytest.mark.asyncio
-async def test_add_model_already_exists(started_registry):
+async def test_add_model_already_exists(started_registry, llm_provider_config):
     """Test adding a model that already exists."""
     service = await anext(started_registry)
-    
     # Create a model
     model = ModelConfig(
         id="existing_model",
@@ -195,13 +205,12 @@ async def test_add_model_already_exists(started_registry):
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
             reset_timeout=30.0
-        )
+        ),
+        llm_provider=llm_provider_config
     )
-    
     # Add the model
     service.config_manager.models["existing_model"] = model
     service.registry.models["existing_model"] = model
-    
     # Try to add it again
     with pytest.raises(ModelAlreadyExistsError):
         await service.add_model("existing_model", model)
@@ -218,10 +227,9 @@ async def test_get_model_not_found(started_registry):
 
 
 @pytest.mark.asyncio
-async def test_get_model_found(started_registry):
+async def test_get_model_found(started_registry, llm_provider_config):
     """Test getting a model that exists."""
     service = await anext(started_registry)
-    
     # Create a model
     model = ModelConfig(
         id="test_model",
@@ -235,15 +243,13 @@ async def test_get_model_found(started_registry):
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
             reset_timeout=30.0
-        )
+        ),
+        llm_provider=llm_provider_config
     )
-    
     # Add the model
     service.config_manager.models["test_model"] = model
-    
     # Get the model
     retrieved_model = service.get_model("test_model")
-    
     # Verify the model was retrieved
     assert retrieved_model.id == "test_model"
     assert retrieved_model.name == "Test Model"

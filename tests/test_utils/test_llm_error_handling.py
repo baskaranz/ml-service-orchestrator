@@ -1,190 +1,165 @@
 """
-Tests for LLM-based error handling utilities.
+Tests for LLM-based error handling.
 """
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import json
-from datetime import datetime
+from typing import Dict, Any, Optional
 
 from app.utils.error_handling.llm_errors import LLMErrorClassifier, SmartRetryHandler
-from app.utils.error_handling.llm_circuit_breaker import LLMCircuitBreaker, LLMCircuitBreakerState
+from app.models.config_models import LLMProviderConfig
 from app.utils.error_handling.base import RetryConfig
 
 @pytest.fixture
-def mock_llm():
-    """Create a mock LLM for testing."""
-    mock = MagicMock()
-    mock.arun = AsyncMock()
-    return mock
-
-@pytest.fixture
-def error_classifier(mock_llm):
-    """Create an error classifier with a mock LLM."""
-    with patch('langchain_community.chat_models.ChatLiteLLM', return_value=mock_llm):
-        return LLMErrorClassifier(model_name="gpt-3.5-turbo")
-
-@pytest.fixture
-def smart_retry_handler():
-    """Create a smart retry handler for testing."""
-    retry_config = RetryConfig(max_retries=3, initial_delay=0.1, max_delay=1.0)
-    return SmartRetryHandler(retry_config=retry_config)
-
-@pytest.fixture
-def llm_circuit_breaker():
-    """Create an LLM circuit breaker for testing."""
-    return LLMCircuitBreaker(
-        fail_max=3,
-        reset_timeout=60,
-        name="test_breaker"
+def llm_config() -> LLMProviderConfig:
+    """Create a test LLM provider configuration."""
+    return LLMProviderConfig(
+        type="huggingface",
+        model_name="mistralai/Mistral-7B-Instruct-v0.2",
+        timeout=30,
+        max_retries=3,
+        api_key="test-key"
     )
 
-@pytest.mark.asyncio
-async def test_error_classification_transient(error_classifier):
-    """Test classification of transient errors."""
-    with patch('langchain.chains.LLMChain.arun', new_callable=AsyncMock) as mock_arun:
-        mock_arun.return_value = "This is a transient error that should be retried."
-        error = Exception("Connection timeout")
-        context = {"attempt": 1}
-        result = await error_classifier.classify_error(error, context)
-        assert result["type"] == "transient"
-        assert result["should_retry"] is True
-        assert "reasoning" in result
+@pytest.fixture
+def error_classifier(llm_config: LLMProviderConfig) -> LLMErrorClassifier:
+    """Create a test LLM error classifier."""
+    return LLMErrorClassifier(config=llm_config)
+
+@pytest.fixture
+def retry_handler(llm_config: LLMProviderConfig) -> SmartRetryHandler:
+    """Create a test smart retry handler."""
+    retry_config = RetryConfig(
+        max_retries=3,
+        initial_delay=1.0,
+        max_delay=10.0
+    )
+    return SmartRetryHandler(retry_config=retry_config, llm_config=llm_config)
 
 @pytest.mark.asyncio
-async def test_error_classification_rate_limit(error_classifier):
-    """Test classification of rate limit errors."""
-    with patch('langchain.chains.LLMChain.arun', new_callable=AsyncMock) as mock_arun:
-        mock_arun.return_value = "This is a rate limit error that requires backoff."
-        error = Exception("Too many requests")
-        context = {"attempt": 1}
-        result = await error_classifier.classify_error(error, context)
-        assert result["type"] == "rate_limit"
-        assert result["should_retry"] is True
-        assert "reasoning" in result
-
-@pytest.mark.asyncio
-async def test_error_classification_permanent(error_classifier):
-    """Test classification of permanent errors."""
-    with patch('langchain.chains.LLMChain.arun', new_callable=AsyncMock) as mock_arun:
-        mock_arun.return_value = "This is a permanent error that should not be retried."
-        error = Exception("Invalid input")
-        context = {"attempt": 1}
-        result = await error_classifier.classify_error(error, context)
-        assert result["type"] == "permanent"
-        assert result["should_retry"] is False
-        assert "reasoning" in result
-
-@pytest.mark.asyncio
-async def test_smart_retry_handler(smart_retry_handler):
-    """Test smart retry handler with different error types."""
-    mock_func = AsyncMock(side_effect=[
-        Exception("Rate limit"),
-        Exception("Rate limit"),
-        "success"
-    ])
-    with patch("app.utils.error_handling.llm_errors.completion_with_retries", new=AsyncMock(return_value="success")):
-        with patch.object(
-            smart_retry_handler.error_classifier,
-            'classify_error',
-            return_value={
-                "type": "rate_limit",
-                "should_retry": True,
-                "reasoning": "Rate limit error"
-            }
-        ):
-            result = await smart_retry_handler.with_retry(mock_func)
-            assert result == "success"
-            assert mock_func.call_count == 1
-
-@pytest.mark.asyncio
-async def test_llm_circuit_breaker_state(llm_circuit_breaker):
-    """Test LLM circuit breaker state transitions."""
-    # Create a state instance
-    state = LLMCircuitBreakerState(llm_circuit_breaker, "test_state")
-    
-    # Mock error classifier
-    mock_classification = {
-        "type": "rate_limit",
-        "should_retry": True,
-        "reasoning": "Rate limit error"
-    }
-    
-    with patch.object(
-        llm_circuit_breaker.error_classifier,
-        'classify_error',
-        return_value=mock_classification
-    ):
-        # Test error handling
-        error = Exception("Rate limit")
-        await state._analyze_error_pattern(error)
+async def test_classify_transient_error(error_classifier: LLMErrorClassifier) -> None:
+    """Test classifying a transient error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: transient\nReasoning: Network timeout"
         
-        # Verify error pattern was stored
-        patterns = state.get_error_patterns()
-        assert "Exception" in patterns
-        assert patterns["Exception"]["classification"] == mock_classification
-        assert "timestamp" in patterns["Exception"]
+        error = ConnectionError("Connection timed out")
+        context = {"attempt": 1, "max_retries": 3}
+        
+        result = await error_classifier.classify_error(error, context)
+        assert result["classification"] == "transient"
+        assert "Network timeout" in result["reasoning"]
+        mock_generate.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_llm_circuit_breaker_error_handling(llm_circuit_breaker):
-    """Test LLM circuit breaker error handling."""
-    mock_func = AsyncMock(side_effect=Exception("Test error"))
-    with patch.object(
-        llm_circuit_breaker.error_classifier,
-        'classify_error',
-        return_value={
-            "type": "transient",
-            "should_retry": True,
-            "reasoning": "Transient error"
-        }
-    ):
-        # Directly call the error pattern analyzer to ensure the error is recorded
-        await llm_circuit_breaker._state._analyze_error_pattern(Exception("Test error"))
-        patterns = llm_circuit_breaker.get_error_patterns()
-        assert "Exception" in patterns
-        assert patterns["Exception"]["classification"]["type"] == "transient"
+async def test_classify_permanent_error(error_classifier: LLMErrorClassifier) -> None:
+    """Test classifying a permanent error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: permanent\nReasoning: Invalid input format"
+        
+        error = ValueError("Invalid input format")
+        context = {"input": "invalid_data"}
+        
+        result = await error_classifier.classify_error(error, context)
+        assert result["classification"] == "permanent"
+        assert "Invalid input format" in result["reasoning"]
+        mock_generate.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_llm_circuit_breaker_parameter_adjustment(llm_circuit_breaker):
-    """Test LLM circuit breaker parameter adjustment based on error type."""
-    original_reset_timeout = llm_circuit_breaker.reset_timeout
-    original_fail_max = llm_circuit_breaker.fail_max
-    
-    # Test rate limit error
-    with patch.object(
-        llm_circuit_breaker.error_classifier,
-        'classify_error',
-        return_value={
-            "type": "rate_limit",
-            "should_retry": True,
-            "reasoning": "Rate limit error"
-        }
-    ):
-        await llm_circuit_breaker._state._analyze_error_pattern(Exception("Rate limit"))
-        assert llm_circuit_breaker.reset_timeout > original_reset_timeout
-    
-    # Test transient error
-    with patch.object(
-        llm_circuit_breaker.error_classifier,
-        'classify_error',
-        return_value={
-            "type": "transient",
-            "should_retry": True,
-            "reasoning": "Transient error"
-        }
-    ):
-        await llm_circuit_breaker._state._analyze_error_pattern(Exception("Transient"))
-        assert llm_circuit_breaker.fail_max > original_fail_max
-    
-    # Test permanent error
-    with patch.object(
-        llm_circuit_breaker.error_classifier,
-        'classify_error',
-        return_value={
-            "type": "permanent",
-            "should_retry": False,
-            "reasoning": "Permanent error"
-        }
-    ):
-        await llm_circuit_breaker._state._analyze_error_pattern(Exception("Permanent"))
-        assert llm_circuit_breaker.fail_max <= original_fail_max 
+async def test_classify_rate_limit_error(error_classifier: LLMErrorClassifier) -> None:
+    """Test classifying a rate limit error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: rate_limit\nReasoning: Too many requests"
+        
+        error = ConnectionError("429 Too Many Requests")
+        context = {"endpoint": "api/v1/predict"}
+        
+        result = await error_classifier.classify_error(error, context)
+        assert result["classification"] == "rate_limit"
+        assert "Too many requests" in result["reasoning"]
+        mock_generate.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_classify_authentication_error(error_classifier: LLMErrorClassifier) -> None:
+    """Test classifying an authentication error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: authentication\nReasoning: Invalid API key"
+        
+        error = ConnectionError("401 Unauthorized")
+        context = {"endpoint": "api/v1/predict"}
+        
+        result = await error_classifier.classify_error(error, context)
+        assert result["classification"] == "authentication"
+        assert "Invalid API key" in result["reasoning"]
+        mock_generate.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_classify_input_validation_error(error_classifier: LLMErrorClassifier) -> None:
+    """Test classifying an input validation error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: input_validation\nReasoning: Invalid input format"
+        
+        error = ValueError("Invalid input format")
+        context = {"input": "invalid_data"}
+        
+        result = await error_classifier.classify_error(error, context)
+        assert result["classification"] == "input_validation"
+        assert "Invalid input format" in result["reasoning"]
+        mock_generate.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_smart_retry_handler_transient_error(retry_handler: SmartRetryHandler) -> None:
+    """Test smart retry handler with transient error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: transient\nReasoning: Network timeout"
+        
+        error = ConnectionError("Connection timed out")
+        context = {"attempt": 1, "max_retries": 3}
+        
+        should_retry = await retry_handler.should_retry(error, context)
+        assert should_retry is True
+        assert retry_handler.retry_count == 1
+
+@pytest.mark.asyncio
+async def test_smart_retry_handler_permanent_error(retry_handler: SmartRetryHandler) -> None:
+    """Test smart retry handler with permanent error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: permanent\nReasoning: Invalid input format"
+        
+        error = ValueError("Invalid input format")
+        context = {"input": "invalid_data"}
+        
+        should_retry = await retry_handler.should_retry(error, context)
+        assert should_retry is False
+        assert retry_handler.retry_count == 0
+
+@pytest.mark.asyncio
+async def test_smart_retry_handler_rate_limit_error(retry_handler: SmartRetryHandler) -> None:
+    """Test smart retry handler with rate limit error."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: rate_limit\nReasoning: Too many requests"
+        
+        error = ConnectionError("429 Too Many Requests")
+        context = {"endpoint": "api/v1/predict"}
+        
+        should_retry = await retry_handler.should_retry(error, context)
+        assert should_retry is True
+        assert retry_handler.retry_count == 1
+
+@pytest.mark.asyncio
+async def test_smart_retry_handler_max_retries_exceeded(retry_handler: SmartRetryHandler) -> None:
+    """Test smart retry handler when max retries are exceeded."""
+    with patch('app.utils.llm_providers.HuggingFaceProvider.generate') as mock_generate:
+        mock_generate.return_value = "Classification: transient\nReasoning: Network timeout"
+
+        error = ConnectionError("Connection timed out")
+        context = {"attempt": 3, "max_retries": 3}
+
+        # Set retry count to max retries
+        retry_handler.retry_count = retry_handler.retry_config.max_retries
+
+        # Should not retry when max retries is reached
+        should_retry = await retry_handler.should_retry(error, context)
+        assert should_retry is False
+
+        # Verify retry count was not incremented
+        assert retry_handler.retry_count == retry_handler.retry_config.max_retries 

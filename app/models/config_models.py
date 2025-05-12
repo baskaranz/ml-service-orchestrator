@@ -59,6 +59,14 @@ class TransformationConfig(BaseModel):
     request_template: Optional[str] = Field(None, description="Jinja2 template for request transformation")
     response_template: Optional[str] = Field(None, description="Jinja2 template for response transformation")
 
+class LLMProviderConfig(BaseModel):
+    """Configuration for LLM providers."""
+    type: str = Field(..., description="Type of LLM provider (huggingface or ollama)")
+    model_name: Optional[str] = Field(None, description="Name of the model to use")
+    timeout: Optional[int] = Field(30, description="Timeout in seconds for API calls")
+    max_retries: Optional[int] = Field(3, description="Maximum number of retries for API calls")
+    api_key: Optional[str] = Field(None, description="API key for the provider (optional)")
+
 class ModelConfig(BaseModel):
     """Model configuration."""
     id: str = Field(..., description="Unique identifier for the model")
@@ -73,6 +81,7 @@ class ModelConfig(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     type: Optional[str] = Field(default=None, description="Type of the model (e.g., classification, regression)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the model")
+    llm_provider: Optional[LLMProviderConfig] = Field(None, description="LLM provider configuration")
 
     @validator("endpoint_url")
     def validate_endpoint_url(cls, v: str) -> str:

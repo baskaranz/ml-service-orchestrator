@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
-from app.models.config_models import ModelConfig, CircuitBreakerConfig, AuthConfig, CacheConfig, AuthType, AuthLocation
+from app.models.config_models import ModelConfig, CircuitBreakerConfig, AuthConfig, CacheConfig, AuthType, AuthLocation, LLMProviderConfig
 from app.config.models_config import ModelConfigManager
 from app.services.orchestrator import Orchestrator
 from app.services.model_registry import ModelRegistryService
@@ -44,7 +44,19 @@ def client(app):
 
 
 @pytest.fixture
-def model_config_instance():
+def llm_provider_config() -> LLMProviderConfig:
+    """Create a test LLM provider configuration."""
+    return LLMProviderConfig(
+        type="huggingface",
+        model_name="test-model",
+        timeout=30,
+        max_retries=3,
+        api_key="test-key"
+    )
+
+
+@pytest.fixture
+def model_config_instance(llm_provider_config):
     """Create a sample model configuration for testing."""
     return ModelConfig(
         id="test_model_1",
@@ -58,12 +70,13 @@ def model_config_instance():
             reset_timeout=15.0
         ),
         timeout=30.0,
-        max_retries=3
+        max_retries=3,
+        llm_provider=llm_provider_config
     )
 
 
 @pytest.fixture
-def model_configs(model_config_instance):
+def model_configs(model_config_instance, llm_provider_config):
     """Create a list of model configs for testing."""
     model_2 = ModelConfig(
         id="test_model_2",
@@ -77,7 +90,8 @@ def model_configs(model_config_instance):
             reset_timeout=20.0
         ),
         timeout=30.0,
-        max_retries=3
+        max_retries=3,
+        llm_provider=llm_provider_config
     )
     return [model_config_instance, model_2]
 

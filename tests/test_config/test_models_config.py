@@ -10,7 +10,7 @@ from unittest.mock import patch, AsyncMock, MagicMock, mock_open
 import pytest
 import yaml
 
-from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig
+from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig, LLMProviderConfig
 from app.config.models_config import ModelConfigManager
 from app.core.exceptions import ModelAlreadyExistsError, ModelNotFoundError
 
@@ -85,7 +85,19 @@ def mock_config_manager(test_model_configs):
 
 
 @pytest.fixture
-def model_config_instance():
+def llm_provider_config() -> LLMProviderConfig:
+    """Create a test LLM provider configuration."""
+    return LLMProviderConfig(
+        type="huggingface",
+        model_name="test-model",
+        timeout=30,
+        max_retries=3,
+        api_key="test-key"
+    )
+
+
+@pytest.fixture
+def model_config_instance(llm_provider_config):
     """Create a model configuration instance."""
     return ModelConfig(
         id="test_model_1",
@@ -99,7 +111,8 @@ def model_config_instance():
             reset_timeout=30.0
         ),
         max_retries=3,
-        timeout=30.0
+        timeout=30.0,
+        llm_provider=llm_provider_config
     )
 
 
@@ -172,18 +185,17 @@ async def test_get_model_config_found(mock_config_manager):
 
 
 @pytest.mark.asyncio
-async def test_add_model_config_already_exists(mock_config_manager, model_config_instance):
+async def test_add_model_config_already_exists(mock_config_manager, model_config_instance, llm_provider_config):
     """Test adding a model configuration that already exists."""
-    # First load configurations
     await mock_config_manager.load_configs()
-    
     # Try to add a model that already exists
+    duplicate_model = model_config_instance.model_copy()
     with pytest.raises(ModelAlreadyExistsError):
-        mock_config_manager.add_model_config(model_config_instance)
+        mock_config_manager.add_model_config(duplicate_model)
 
 
 @pytest.mark.asyncio
-async def test_add_model_config(mock_config_manager):
+async def test_add_model_config(mock_config_manager, llm_provider_config):
     """Test adding a new model configuration."""
     new_model = ModelConfig(
         id="test_model_3",
@@ -193,7 +205,8 @@ async def test_add_model_config(mock_config_manager):
         endpoint_url="http://localhost:8003/predict",
         active=True,
         type="classification",
-        metadata={"framework": "sklearn"}
+        metadata={"framework": "sklearn"},
+        llm_provider=llm_provider_config
     )
     
     mock_config_manager.add_model_config(new_model)
@@ -206,18 +219,17 @@ async def test_add_model_config(mock_config_manager):
 
 
 @pytest.mark.asyncio
-async def test_update_model_config_not_found(mock_config_manager, model_config_instance):
+async def test_update_model_config_not_found(mock_config_manager, model_config_instance, llm_provider_config):
     """Test updating a model configuration that doesn't exist."""
-    # First load configurations
     await mock_config_manager.load_configs()
-    
     # Try to update a non-existent model
+    update_model = model_config_instance.model_copy()
     with pytest.raises(ModelNotFoundError):
-        mock_config_manager.update_model_config("nonexistent_model", model_config_instance)
+        mock_config_manager.update_model_config("nonexistent_model", update_model)
 
 
 @pytest.mark.asyncio
-async def test_update_model_config(mock_config_manager):
+async def test_update_model_config(mock_config_manager, llm_provider_config):
     """Test updating an existing model configuration."""
     # First load the configs
     await mock_config_manager.load_configs()
@@ -231,7 +243,8 @@ async def test_update_model_config(mock_config_manager):
         endpoint_url="http://localhost:8001/predict",
         active=True,
         type="classification",
-        metadata={"framework": "pytorch", "tags": ["updated"]}
+        metadata={"framework": "pytorch", "tags": ["updated"]},
+        llm_provider=llm_provider_config
     )
     
     mock_config_manager.update_model_config("test_model_1", updated_model)

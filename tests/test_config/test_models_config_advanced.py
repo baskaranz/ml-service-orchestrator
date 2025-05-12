@@ -12,9 +12,21 @@ import yaml
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
-from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig
+from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig, LLMProviderConfig
 from app.config.models_config import ModelConfigManager
 from app.core.exceptions import ModelAlreadyExistsError, ModelNotFoundError
+
+
+@pytest.fixture
+def llm_provider_config() -> LLMProviderConfig:
+    """Create a test LLM provider configuration."""
+    return LLMProviderConfig(
+        type="huggingface",
+        model_name="test-model",
+        timeout=30,
+        max_retries=3,
+        api_key="test-key"
+    )
 
 
 @pytest.mark.asyncio
@@ -154,14 +166,12 @@ def test_should_reload_no_registry():
 
 
 @pytest.mark.asyncio
-async def test_update_model_config_not_found():
+async def test_update_model_config_not_found(llm_provider_config):
     """Test updating a model when it doesn't exist."""
     with tempfile.TemporaryDirectory() as temp_dir:
         manager = ModelConfigManager(config_dir=temp_dir)
-        
         # First load configurations
         await manager.load_configs()
-        
         # Try to update a non-existent model
         model = ModelConfig(
             id="nonexistent_model",
@@ -175,9 +185,9 @@ async def test_update_model_config_not_found():
             circuit_breaker=CircuitBreakerConfig(
                 failure_threshold=5,
                 reset_timeout=30.0
-            )
+            ),
+            llm_provider=llm_provider_config
         )
-        
         with pytest.raises(ModelNotFoundError):
             manager.update_model_config("nonexistent_model", model)
 

@@ -56,7 +56,7 @@ def test_admin_list_models(mock_list_models, client: TestClient, setup_api_key):
 
 
 @patch("app.services.model_registry.ModelRegistryService.get_model_config")
-def test_admin_get_model(mock_get_model, client: TestClient, setup_api_key, model_config_instance):
+def test_admin_get_model(mock_get_model, client: TestClient, setup_api_key, model_config_instance, llm_provider_config):
     """Test getting a specific model."""
     # Setup mock to return a model
     mock_get_model.return_value = model_config_instance
@@ -91,7 +91,7 @@ def test_admin_get_model_not_found(mock_get_model, client: TestClient, setup_api
 
 
 @patch("app.services.model_registry.ModelRegistryService.add_model", new_callable=AsyncMock)
-def test_admin_add_model(mock_add_model, client: TestClient, setup_api_key, model_config_instance):
+def test_admin_add_model(mock_add_model, client: TestClient, setup_api_key, model_config_instance, llm_provider_config):
     """Test adding a new model."""
     new_model = model_config_instance.model_copy(update={"id": "new_test_model"})
     mock_add_model.return_value = new_model
@@ -108,7 +108,7 @@ def test_admin_add_model(mock_add_model, client: TestClient, setup_api_key, mode
 
 
 @patch("app.services.model_registry.ModelRegistryService.add_model", new_callable=AsyncMock)
-def test_admin_add_model_conflict(mock_add_model, client: TestClient, setup_api_key, model_config_instance):
+def test_admin_add_model_conflict(mock_add_model, client: TestClient, setup_api_key, model_config_instance, llm_provider_config):
     """Test adding a model that already exists."""
     mock_add_model.side_effect = ValueError("Model already exists")
     model_data = model_config_instance.model_dump()
@@ -121,7 +121,7 @@ def test_admin_add_model_conflict(mock_add_model, client: TestClient, setup_api_
 
 
 @patch("app.services.model_registry.ModelRegistryService.update_model", new_callable=AsyncMock)
-def test_admin_update_model(mock_update_model, client: TestClient, setup_api_key, model_config_instance):
+def test_admin_update_model(mock_update_model, client: TestClient, setup_api_key, model_config_instance, llm_provider_config):
     """Test updating an existing model."""
     updated_model = model_config_instance.model_copy(update={
         "name": "Updated Model",
@@ -140,7 +140,7 @@ def test_admin_update_model(mock_update_model, client: TestClient, setup_api_key
 
 
 @patch("app.services.model_registry.ModelRegistryService.update_model", new_callable=AsyncMock)
-def test_admin_update_model_id_mismatch(mock_update_model, client: TestClient, setup_api_key, model_config_instance):
+def test_admin_update_model_id_mismatch(mock_update_model, client: TestClient, setup_api_key, model_config_instance, llm_provider_config):
     """Test updating a model with mismatched IDs."""
     # Create a model with a different ID
     different_id_model = model_config_instance.model_copy(update={"id": "different_id"})
@@ -159,7 +159,7 @@ def test_admin_update_model_id_mismatch(mock_update_model, client: TestClient, s
 
 
 @patch("app.services.model_registry.ModelRegistryService.update_model", new_callable=AsyncMock)
-def test_admin_update_model_not_found(mock_update_model, client: TestClient, setup_api_key, model_config_instance):
+def test_admin_update_model_not_found(mock_update_model, client: TestClient, setup_api_key, model_config_instance, llm_provider_config):
     """Test updating a model that doesn't exist."""
     mock_update_model.side_effect = KeyError("Model not found")
     nonexistent_model = model_config_instance.model_copy(update={"id": "nonexistent_model"})

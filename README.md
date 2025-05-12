@@ -92,6 +92,110 @@ The orchestrator service uses the following environment variables (configured in
 - `HOST`: Host to bind to (default: 0.0.0.0)
 - `PORT`: Port to listen on (default: 8000)
 
+## 🚦 Advanced Error Handling, Retries, and Circuit Breaker
+
+### Overview
+
+This project implements robust, async-compatible error handling and circuit breaker logic for all model API requests. The system is designed to maximize reliability, observability, and resilience against transient and persistent failures.
+
+---
+
+### Features
+
+- **Configurable Retries:**  
+  Each model can specify its own `max_retries` and timeout settings. Retries use exponential backoff and optional jitter to avoid thundering herd problems.
+
+- **Async Circuit Breaker:**  
+  Each model is protected by a circuit breaker that tracks failures and automatically opens to prevent repeated failed requests from overwhelming the system.
+
+  - Circuit breaker settings (failure threshold, reset timeout, excluded exceptions) are configurable per model.
+
+- **Centralized Error Handling:**  
+  All errors are logged, categorized, and tracked. The system distinguishes between transient errors (which can be retried) and permanent errors (which are not retried).
+
+- **Model Statistics Endpoint:**  
+  Query real-time statistics for any model, including request counts, error rates, and last success/failure times.
+
+---
+
+### Configuration
+
+Each model in your configuration can specify:
+
+```yaml
+max_retries: 3
+timeout: 10.0
+circuit_breaker:
+  failure_threshold: 5
+  reset_timeout: 60.0
+  exclude_exceptions:
+    - ValueError
+```
+
+---
+
+### API Endpoints
+
+#### **Forward Request to Model**
+
+- `POST /orchestrator/{model_id}`
+  - Forwards a request to the specified model endpoint with full error handling and circuit breaker protection.
+
+#### **Get Model Statistics**
+
+- `GET /orchestrator/{model_id}/stats`
+
+  - Returns statistics and error handling information for the specified model.
+
+  **Example Response:**
+
+  ```json
+  {
+    "model_id": "my-model",
+    "request_stats": {
+      "total_requests": 42,
+      "successful_requests": 35,
+      "failed_requests": 7,
+      "last_success": "2024-06-01T12:34:56.789Z",
+      "last_failure": "2024-06-01T12:40:00.123Z"
+    },
+    "error_stats": {
+      "counts": {
+        "TimeoutError": 3,
+        "HTTPStatusError": 4
+      },
+      "last_errors": {
+        "TimeoutError": "2024-06-01T12:39:00.000Z",
+        "HTTPStatusError": "2024-06-01T12:40:00.123Z"
+      }
+    }
+  }
+  ```
+
+---
+
+### Testing
+
+A comprehensive test script is provided at `app/scripts/test_error_handling.py`:
+
+- Simulates both transient and persistent failures.
+- Verifies retry logic, error handling, and statistics tracking.
+- Can be used as a template for future tests.
+
+Run the test with:
+
+```bash
+python -m app.scripts.test_error_handling
+```
+
+---
+
+### Best Practices
+
+- Use async functions for all I/O-bound operations.
+- Configure circuit breaker and retry settings per model for optimal resilience.
+- Monitor the statistics endpoint to track model health and error rates.
+
 ## Stopping the Application
 
 ```bash

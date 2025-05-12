@@ -83,12 +83,22 @@ class ModelErrorHandler(BaseErrorHandler):
         Raises:
             ModelRequestError: If all retries fail
         """
+        import pybreaker
         try:
             result = await super().with_retry(func, *args, **kwargs)
             self._update_request_stats(True)
             return result
         except Exception as e:
             self._update_request_stats(False)
+            # If it's a CircuitBreakerError, propagate as-is
+            if isinstance(e, CircuitBreakerError):
+                raise
+            # If it's a pybreaker.CircuitBreakerError, convert and propagate
+            if isinstance(e, pybreaker.CircuitBreakerError):
+                raise CircuitBreakerError(
+                    message="Circuit breaker is open for model {}".format(self.model_id),
+                    model_id=self.model_id
+                ) from e
             # Convert to ModelRequestError if it's not already
             if not isinstance(e, ModelRequestError):
                 raise ModelRequestError(

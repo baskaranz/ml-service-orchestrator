@@ -8,6 +8,7 @@ import logging
 import pybreaker
 from fastapi import Request, Response
 from httpx import Response as HttpxResponse
+import asyncio
 
 from app.core.exceptions import ModelRequestError, CircuitBreakerError
 from app.models.config_models import ModelConfig
@@ -61,7 +62,9 @@ class Orchestrator:
 
     def _build_target_url(self, base_url: str, path_suffix: str = "") -> str:
         """Build the target URL for a request."""
-        return f"{base_url.rstrip('/')}/{path_suffix.lstrip('/')}"
+        if path_suffix:
+            return f"{base_url.rstrip('/')}/{path_suffix.lstrip('/')}"
+        return base_url.rstrip('/')
 
     def _get_exclude_exceptions(self, model_config: ModelConfig) -> List[type]:
         """Get the list of exceptions to exclude from circuit breaker."""
@@ -170,6 +173,18 @@ class Orchestrator:
                 model_id=model_id
             )
 
+    async def async_circuit_breaker_call(self, circuit_breaker, func, *args, **kwargs):
+        """Async version of circuit breaker call for async functions using public API."""
+        if circuit_breaker.current_state != "closed":
+            raise pybreaker.CircuitBreakerError()
+        try:
+            result = await func(*args, **kwargs)
+            circuit_breaker.success()
+            return result
+        except Exception as exc:
+            circuit_breaker.failure()
+            raise
+
     async def proxy_request(
         self,
         model_config: ModelConfig,
@@ -201,7 +216,8 @@ class Orchestrator:
 
             # Execute request through error handler and circuit breaker
             return await error_handler.with_retry(
-                circuit_breaker.call,
+                self.async_circuit_breaker_call,
+                circuit_breaker,
                 self._execute_proxied_request,
                 http_client=http_client,
                 method=request.method,
@@ -212,17 +228,23 @@ class Orchestrator:
                 model_id=model_config.id
             )
         except pybreaker.CircuitBreakerError as e:
+            # Convert pybreaker.CircuitBreakerError to our CircuitBreakerError
             raise CircuitBreakerError(
                 message=f"Circuit breaker is open for model {model_config.id}",
                 model_id=model_config.id
-            )
+            ) from e
+        except ModelRequestError:
+            # Re-raise ModelRequestError as is
+            raise
+        except CircuitBreakerError:
+            # Re-raise CircuitBreakerError as is
+            raise
         except Exception as e:
-            if isinstance(e, (ModelRequestError, CircuitBreakerError)):
-                raise
+            # Wrap other exceptions in ModelRequestError
             raise ModelRequestError(
                 f"Failed to proxy request to model {model_config.id}: {str(e)}",
                 model_id=model_config.id
-            )
+            ) from e
     
     def get_model_stats(self, model_id: str) -> Dict[str, Any]:
         """Get statistics for a specific model."""

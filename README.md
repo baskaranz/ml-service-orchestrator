@@ -76,7 +76,6 @@ Model configurations are stored in the `config/models` directory. Each model sho
 id: model-name
 name: Model Name
 endpoint_url: http://localhost:8001
-type: classification
 
 # Optional LLM provider configuration
 llm_provider:

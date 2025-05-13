@@ -74,16 +74,7 @@ class ModelConfig(BaseModel):
     """Model configuration."""
     id: str = Field(..., description="Unique identifier for the model")
     name: str = Field(..., description="Display name of the model")
-    description: str = Field(..., description="Description of the model")
-    version: str = Field(..., description="Version of the model")
     endpoint_url: str = Field(..., description="URL of the model endpoint")
-    active: bool = Field(default=True, description="Whether the model is active")
-    timeout: int = Field(default=30, ge=1, description="Request timeout in seconds")
-    max_retries: int = Field(default=3, ge=0, description="Maximum number of retries")
-    circuit_breaker: Optional[CircuitBreakerConfig] = Field(default=None, description="Circuit breaker configuration")
-    auth: Optional[AuthConfig] = Field(default=None, description="Authentication configuration")
-    type: Optional[str] = Field(default=None, description="Type of the model (e.g., classification, regression)")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the model")
     llm_provider: Optional[LLMProviderConfig] = Field(None, description="Optional LLM provider configuration")
 
     @field_validator("endpoint_url")
@@ -93,22 +84,6 @@ class ModelConfig(BaseModel):
         if not v.startswith(("http://", "https://")):
             raise ValueError("endpoint_url must start with http:// or https://")
         return v.rstrip("/")
-
-    @field_validator("timeout")
-    @classmethod
-    def validate_timeout(cls, v: int) -> int:
-        """Validate timeout."""
-        if v < 1:
-            raise ValueError("timeout must be at least 1 second")
-        return v
-
-    @field_validator("max_retries")
-    @classmethod
-    def validate_max_retries(cls, v: int) -> int:
-        """Validate max retries."""
-        if v < 0:
-            raise ValueError("max_retries must be non-negative")
-        return v
 
 class ModelRegistry(BaseModel):
     """Model registry configuration."""

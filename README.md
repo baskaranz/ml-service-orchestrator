@@ -72,25 +72,19 @@ curl -X POST http://localhost:8002/predict \
 Model configurations are stored in the `config/models` directory. Each model should have its own YAML configuration file with the following structure:
 
 ```yaml
+# Basic configuration (required)
 id: model-name
 name: Model Name
-description: Model description
 endpoint_url: http://localhost:8001
-version: 1.0.0
-active: true
-timeout: 30.0
-max_retries: 3
 type: classification
-metadata:
-  framework: pytorch
-  tags: [test, dummy]
+
+# Optional LLM provider configuration
 llm_provider:
   type: huggingface # or ollama
   model_name: mistralai/Mistral-7B-Instruct-v0.2
-  timeout: 30
-  max_retries: 3
-  api_key: ${HUGGINGFACE_API_KEY} # Optional, can be set via environment
 ```
+
+The LLM provider configuration is optional and can be omitted if you don't need advanced error handling or LLM-based features.
 
 ### Environment Variables
 
@@ -101,7 +95,7 @@ The orchestrator service uses the following environment variables (configured in
 - `DEBUG`: Debug mode (default: true)
 - `HOST`: Host to bind to (default: 0.0.0.0)
 - `PORT`: Port to listen on (default: 8000)
-- `HUGGINGFACE_API_KEY`: API key for Hugging Face models (required for production)
+- `HUGGINGFACE_API_KEY`: API key for Hugging Face models (required only if using Hugging Face LLM provider)
 - `APP_ENV`: Environment (development, production, test)
 
 ## 🚦 Advanced LLM-Based Error Handling

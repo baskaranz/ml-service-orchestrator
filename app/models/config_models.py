@@ -84,7 +84,7 @@ class ModelConfig(BaseModel):
     auth: Optional[AuthConfig] = Field(default=None, description="Authentication configuration")
     type: Optional[str] = Field(default=None, description="Type of the model (e.g., classification, regression)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the model")
-    llm_provider: Optional[LLMProviderConfig] = Field(None, description="LLM provider configuration")
+    llm_provider: Optional[LLMProviderConfig] = Field(None, description="Optional LLM provider configuration")
 
     @field_validator("endpoint_url")
     @classmethod

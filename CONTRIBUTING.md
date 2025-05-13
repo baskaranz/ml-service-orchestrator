@@ -264,3 +264,7 @@ By contributing to this project, you agree that your contributions will be licen
 - You may see warnings about Pydantic V1 `@validator` usage and FastAPI's `@app.on_event` deprecation. These do not affect functionality but should be addressed in future updates:
   - Migrate to Pydantic V2 `@field_validator`.
   - Use FastAPI lifespan event handlers instead of `@app.on_event`.
+
+### Docker Compose Cleanup
+
+- Sample and test `docker-compose` files have been removed to clean up the project. The main `docker-compose.yml` file remains for primary application configuration.

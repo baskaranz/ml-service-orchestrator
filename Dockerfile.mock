@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Copy mock model code
+COPY app/mocks /app/mocks
+
+# Install dependencies
+RUN pip install fastapi uvicorn pydantic
+
+# Environment variables
+ENV MODEL_NAME=mock-model
+ENV MODEL_VERSION=1.0.0
+
+# Run the mock model server
+CMD ["sh", "-c", "python /app/mocks/model_mock.py --port ${PORT} --model-name ${MODEL_NAME}"] 

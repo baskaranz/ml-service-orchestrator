@@ -4,27 +4,30 @@ DB/config Pydantic models for the orchestrator service.
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field, validator, AnyUrl
+from pydantic import BaseModel, ConfigDict, Field, validator, AnyUrl, field_validator
+from pydantic_core.core_schema import ValidationInfo
 
 class CircuitBreakerConfig(BaseModel):
     """Circuit breaker configuration."""
     model_config = ConfigDict(populate_by_name=True)
-    failure_threshold: int = Field(default=5, description="Number of failures before opening circuit")
-    reset_timeout: float = Field(default=30.0, description="Time in seconds before attempting to close circuit")
-    exclude_exceptions: List[str] = Field(default_factory=list, description="List of exception names to exclude from circuit breaker")
+    failure_threshold: int = Field(default=5, ge=1, description="Number of failures before opening circuit")
+    reset_timeout: int = Field(default=60, ge=1, description="Seconds to wait before attempting to close circuit")
+    exclude_exceptions: List[str] = Field(default_factory=list, description="Exceptions to exclude from failure count")
 
-    @validator("failure_threshold")
+    @field_validator("failure_threshold")
+    @classmethod
     def validate_failure_threshold(cls, v: int) -> int:
         """Validate failure threshold."""
         if v < 1:
-            raise ValueError("Failure threshold must be at least 1")
+            raise ValueError("failure_threshold must be at least 1")
         return v
 
-    @validator("reset_timeout")
-    def validate_reset_timeout(cls, v: float) -> float:
+    @field_validator("reset_timeout")
+    @classmethod
+    def validate_reset_timeout(cls, v: int) -> int:
         """Validate reset timeout."""
-        if v <= 0:
-            raise ValueError("Reset timeout must be positive")
+        if v < 1:
+            raise ValueError("reset_timeout must be at least 1")
         return v
 
 class AuthType(str, Enum):
@@ -75,33 +78,36 @@ class ModelConfig(BaseModel):
     version: str = Field(..., description="Version of the model")
     endpoint_url: str = Field(..., description="URL of the model endpoint")
     active: bool = Field(default=True, description="Whether the model is active")
-    timeout: float = Field(default=30.0, description="Request timeout in seconds")
-    max_retries: int = Field(default=3, description="Maximum number of retries")
-    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
-    auth: AuthConfig = Field(default_factory=AuthConfig)
+    timeout: int = Field(default=30, ge=1, description="Request timeout in seconds")
+    max_retries: int = Field(default=3, ge=0, description="Maximum number of retries")
+    circuit_breaker: Optional[CircuitBreakerConfig] = Field(default=None, description="Circuit breaker configuration")
+    auth: Optional[AuthConfig] = Field(default=None, description="Authentication configuration")
     type: Optional[str] = Field(default=None, description="Type of the model (e.g., classification, regression)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata for the model")
     llm_provider: Optional[LLMProviderConfig] = Field(None, description="LLM provider configuration")
 
-    @validator("endpoint_url")
+    @field_validator("endpoint_url")
+    @classmethod
     def validate_endpoint_url(cls, v: str) -> str:
         """Validate endpoint URL."""
         if not v.startswith(("http://", "https://")):
-            raise ValueError("Endpoint URL must start with http:// or https://")
-        return v
+            raise ValueError("endpoint_url must start with http:// or https://")
+        return v.rstrip("/")
 
-    @validator("timeout")
-    def validate_timeout(cls, v: float) -> float:
+    @field_validator("timeout")
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
         """Validate timeout."""
-        if v <= 0:
-            raise ValueError("Timeout must be positive")
+        if v < 1:
+            raise ValueError("timeout must be at least 1 second")
         return v
 
-    @validator("max_retries")
+    @field_validator("max_retries")
+    @classmethod
     def validate_max_retries(cls, v: int) -> int:
         """Validate max retries."""
         if v < 0:
-            raise ValueError("Max retries cannot be negative")
+            raise ValueError("max_retries must be non-negative")
         return v
 
 class ModelRegistry(BaseModel):
@@ -114,18 +120,51 @@ class ModelRegistry(BaseModel):
 class GlobalSettings(BaseModel):
     """Global settings for all models."""
     model_config = ConfigDict(populate_by_name=True)
-    default_timeout: float = Field(30.0, description="Default timeout in seconds")
-    default_max_retries: int = Field(3, description="Default number of retries")
-    circuit_breaker: CircuitBreakerConfig = Field(default_factory=lambda: CircuitBreakerConfig(failure_threshold=5, reset_timeout=60.0), description="Default circuit breaker configuration")
+    default_timeout: int = Field(30, ge=1, description="Default timeout in seconds")
+    default_max_retries: int = Field(3, ge=0, description="Default number of retries")
+    circuit_breaker: CircuitBreakerConfig = Field(
+        default_factory=lambda: CircuitBreakerConfig(
+            failure_threshold=5,
+            reset_timeout=60,
+            exclude_exceptions=[]
+        ),
+        description="Default circuit breaker configuration"
+    )
 
-    @validator("default_timeout")
-    def validate_default_timeout(cls, v):
-        if v <= 0:
-            raise ValueError("Default timeout must be greater than 0")
+    @field_validator("default_timeout")
+    @classmethod
+    def validate_default_timeout(cls, v: int) -> int:
+        """Validate default timeout."""
+        if v < 1:
+            raise ValueError("default_timeout must be at least 1 second")
         return v
 
-    @validator("default_max_retries")
-    def validate_default_max_retries(cls, v):
+    @field_validator("default_max_retries")
+    @classmethod
+    def validate_default_max_retries(cls, v: int) -> int:
+        """Validate default max retries."""
+        if v < 0:
+            raise ValueError("default_max_retries must be non-negative")
+        return v
+
+class PlatformConfig(BaseModel):
+    """Configuration for the platform."""
+    default_timeout: int = Field(default=30, ge=1, description="Default request timeout in seconds")
+    default_max_retries: int = Field(default=3, ge=0, description="Default maximum number of retries")
+    models: Dict[str, ModelConfig] = Field(default_factory=dict, description="Model configurations")
+
+    @field_validator("default_timeout")
+    @classmethod
+    def validate_default_timeout(cls, v: int) -> int:
+        """Validate default timeout."""
         if v < 1:
-            raise ValueError("Default number of retries must be at least 1")
+            raise ValueError("default_timeout must be at least 1 second")
+        return v
+
+    @field_validator("default_max_retries")
+    @classmethod
+    def validate_default_max_retries(cls, v: int) -> int:
+        """Validate default max retries."""
+        if v < 0:
+            raise ValueError("default_max_retries must be non-negative")
         return v 

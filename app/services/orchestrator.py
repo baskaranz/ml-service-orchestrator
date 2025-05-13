@@ -15,8 +15,11 @@ from app.models.config_models import ModelConfig
 from app.utils.http import HttpClient
 from app.utils.logging import get_logger
 from app.utils.error_handling import ModelErrorHandler, RetryConfig
+from app.config.models_config import ModelConfigManager
 
 logger = get_logger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.debug("Orchestrator module loaded and logger set to DEBUG")
 
 class Orchestrator:
     """
@@ -33,6 +36,18 @@ class Orchestrator:
         self.circuit_breakers: Dict[str, pybreaker.CircuitBreaker] = {}
         self._clients: Dict[str, HttpClient] = {}
         self._error_handlers: Dict[str, ModelErrorHandler] = {}
+    
+    async def initialize_error_handlers(self):
+        """Async: Initialize error handlers for all models."""
+        try:
+            config_manager = ModelConfigManager()
+            _, models = await config_manager.load_configs()
+            for model_id, model_config in models.items():
+                if model_config.active:
+                    self._get_error_handler(model_config)
+                    logger.info(f"Initialized error handler for model {model_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize error handlers: {str(e)}")
     
     def _get_client(self, model_config: ModelConfig) -> HttpClient:
         """Get or create an HTTP client for a model."""
@@ -54,10 +69,12 @@ class Orchestrator:
                 initial_delay=1.0,
                 max_delay=10.0
             )
+            logger.debug(f"Creating error handler for model {model_config.id} with retry_config={retry_config}")
             self._error_handlers[model_config.id] = ModelErrorHandler(
-                model_id=model_config.id,
+                model_config=model_config,
                 retry_config=retry_config
             )
+            logger.debug(f"Error handler created for model {model_config.id}")
         return self._error_handlers[model_config.id]
 
     def _build_target_url(self, base_url: str, path_suffix: str = "") -> str:
@@ -160,6 +177,9 @@ class Orchestrator:
                 content = bytes(response_body)
             else:
                 content = str(response_body).encode()
+            # Filter out problematic headers
+            response_headers = {k: v for k, v in response_headers.items() if k.lower() not in ['content-length', 'transfer-encoding']}
+            logger.debug(f"Returning response with status {status_code}, headers: {response_headers}, content length: {len(content)}")
             return Response(
                 content=content,
                 status_code=status_code,
@@ -179,10 +199,10 @@ class Orchestrator:
             raise pybreaker.CircuitBreakerError()
         try:
             result = await func(*args, **kwargs)
-            circuit_breaker.success()
+            circuit_breaker._state.on_success()
             return result
         except Exception as exc:
-            circuit_breaker.failure()
+            circuit_breaker._state.on_failure(exc)
             raise
 
     async def proxy_request(
@@ -192,6 +212,7 @@ class Orchestrator:
         path_suffix: str = ""
     ) -> Response:
         """Proxy a request to a model endpoint."""
+        logger.debug(f"proxy_request called for model: {model_config.id}")
         if not model_config.id:
             raise ValueError("Model configuration must have an ID")
 
@@ -206,19 +227,17 @@ class Orchestrator:
         circuit_breaker = self.get_circuit_breaker(model_config)
         http_client = self._get_client(model_config)
         error_handler = self._get_error_handler(model_config)
+        logger.debug(f"Retrieved error handler for model {model_config.id}: {error_handler}")
 
-        try:
-            # Get request body
-            body = await self._get_request_body(request)
+        # Get request body
+        body = await self._get_request_body(request)
 
-            # Build target URL
-            target_url = self._build_target_url(model_config.endpoint_url, path_suffix)
+        # Build target URL
+        target_url = self._build_target_url(model_config.endpoint_url, path_suffix)
 
-            # Execute request through error handler and circuit breaker
-            return await error_handler.with_retry(
-                self.async_circuit_breaker_call,
-                circuit_breaker,
-                self._execute_proxied_request,
+        # Define the request execution function
+        async def execute_request():
+            return await self._execute_proxied_request(
                 http_client=http_client,
                 method=request.method,
                 url=target_url,
@@ -227,20 +246,24 @@ class Orchestrator:
                 params=dict(request.query_params),
                 model_id=model_config.id
             )
+
+        try:
+            # Use the error handler's with_retry method to handle retries
+            return await error_handler.with_retry(
+                self.async_circuit_breaker_call,
+                circuit_breaker,
+                execute_request
+            )
         except pybreaker.CircuitBreakerError as e:
-            # Convert pybreaker.CircuitBreakerError to our CircuitBreakerError
             raise CircuitBreakerError(
                 message=f"Circuit breaker is open for model {model_config.id}",
                 model_id=model_config.id
             ) from e
         except ModelRequestError:
-            # Re-raise ModelRequestError as is
             raise
         except CircuitBreakerError:
-            # Re-raise CircuitBreakerError as is
             raise
         except Exception as e:
-            # Wrap other exceptions in ModelRequestError
             raise ModelRequestError(
                 f"Failed to proxy request to model {model_config.id}: {str(e)}",
                 model_id=model_config.id
@@ -248,6 +271,7 @@ class Orchestrator:
     
     def get_model_stats(self, model_id: str) -> Dict[str, Any]:
         """Get statistics for a specific model."""
+        logger.debug(f"Available model IDs in _error_handlers: {list(self._error_handlers.keys())}")
         if model_id not in self._error_handlers:
             raise ValueError(f"No error handler found for model {model_id}")
-        return self._error_handlers[model_id].get_stats() 
+        return {"model_id": model_id, "error_handler": str(self._error_handlers[model_id])} 

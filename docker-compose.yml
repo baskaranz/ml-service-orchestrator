@@ -26,6 +26,20 @@ services:
     networks:
       - ml-orchestrator-network
 
+  error-test-model:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    environment:
+      - PORT=8001
+      - MODEL_NAME=error-test-model
+    ports:
+      - "8001:8001"
+    networks:
+      ml-orchestrator-network:
+        aliases:
+          - error-test-model
+
 networks:
   ml-orchestrator-network:
-    driver: bridge
+    external: true

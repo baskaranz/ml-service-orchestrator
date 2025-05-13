@@ -13,7 +13,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
-def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+def get_logger(name: str, level: int = logging.DEBUG) -> logging.Logger:
     """Get a logger with the specified name and level."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -44,7 +44,7 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     
     return logger
 
-def setup_logging(level: int = logging.INFO, log_level: Optional[str] = None) -> None:
+def setup_logging(level: int = logging.DEBUG, log_level: Optional[str] = None) -> None:
     """Set up logging configuration."""
     # Reset any existing configuration
     logging.getLogger().handlers = []

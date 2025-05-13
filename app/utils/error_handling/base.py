@@ -1,22 +1,29 @@
 """
-Base error handler with retry functionality.
+Base error handling functionality.
 """
 
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Type
 import asyncio
 import logging
-from functools import wraps
 from datetime import datetime
-from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+from app.utils.logging import get_logger
 
-class RetryConfig(BaseModel):
+logger = get_logger(__name__)
+
+class RetryConfig:
     """Configuration for retry behavior."""
-    max_retries: int = 3
-    initial_delay: float = 1.0
-    max_delay: float = 30.0
-    backoff_factor: float = 2.0
+    
+    def __init__(
+        self,
+        max_retries: int = 3,
+        initial_delay: float = 1.0,
+        max_delay: float = 10.0
+    ):
+        """Initialize retry configuration."""
+        self.max_retries = max_retries
+        self.initial_delay = initial_delay
+        self.max_delay = max_delay
 
 class BaseErrorHandler:
     """Base class for error handling with retry functionality."""
@@ -24,43 +31,44 @@ class BaseErrorHandler:
     def __init__(
         self,
         retry_config: Optional[RetryConfig] = None,
-        excluded_exceptions: Optional[list[Type[Exception]]] = None
+        excluded_exceptions: Optional[List[Type[Exception]]] = None
     ):
+        """Initialize the error handler."""
         self.retry_config = retry_config or RetryConfig()
         self.excluded_exceptions = excluded_exceptions or []
+        self.retry_count = 0
         self._error_counts: Dict[str, int] = {}
         self._last_error_times: Dict[str, datetime] = {}
-        self.retry_count = 0
     
-    def _should_retry(self, error: Exception) -> bool:
-        """Determine if the error should trigger a retry."""
-        error_type = type(error).__name__
+    async def _should_retry(self, error: Exception) -> bool:
+        """Determine if an error should trigger a retry."""
+        # Don't retry if max retries reached
+        if self.retry_count >= self.retry_config.max_retries:
+            logger.info(f"Max retries ({self.retry_config.max_retries}) reached, not retrying")
+            return False
         
         # Don't retry excluded exceptions
-        if any(isinstance(error, exc) for exc in self.excluded_exceptions):
-            return False
-        
-        # Check error count
-        if self._error_counts.get(error_type, 0) >= self.retry_config.max_retries:
-            return False
+        for exc_type in self.excluded_exceptions:
+            if isinstance(error, exc_type):
+                logger.info(f"Error type {type(error).__name__} is excluded from retries")
+                return False
         
         return True
     
     def _get_retry_delay(self) -> float:
-        """Calculate the delay for the next retry."""
-        delay = self.retry_config.initial_delay * (self.retry_config.backoff_factor ** self.retry_count)
-        return min(delay, self.retry_config.max_delay)
+        """Calculate the delay before the next retry."""
+        # Exponential backoff with jitter
+        delay = min(
+            self.retry_config.initial_delay * (2 ** self.retry_count),
+            self.retry_config.max_delay
+        )
+        # Add some jitter (±20%)
+        jitter = delay * 0.2
+        return delay + (asyncio.get_event_loop().time() % jitter)
     
-    def _update_error_stats(self, error: Exception):
-        """Update error statistics."""
-        error_type = type(error).__name__
-        self._error_counts[error_type] = self._error_counts.get(error_type, 0) + 1
-        self._last_error_times[error_type] = datetime.now()
-    
-    def _reset_error_stats(self, error_type: str):
-        """Reset error statistics for a specific error type."""
-        self._error_counts[error_type] = 0
-        self._last_error_times.pop(error_type, None)
+    def increment_retry_count(self):
+        """Increment the retry counter."""
+        self.retry_count += 1
     
     async def with_retry(
         self,
@@ -80,66 +88,35 @@ class BaseErrorHandler:
             The result of the function execution
             
         Raises:
-            Exception: The last exception if all retries fail
+            Exception: If all retries fail
         """
-        last_error: Optional[Exception] = None
+        last_error = None
         
-        for attempt in range(self.retry_config.max_retries + 1):
+        while True:
             try:
-                if asyncio.iscoroutinefunction(func):
-                    result = await func(*args, **kwargs)
-                else:
-                    result = func(*args, **kwargs)
-                
-                # Reset error stats on success
-                if last_error:
-                    self._reset_error_stats(type(last_error).__name__)
-                
+                result = await func(*args, **kwargs)
+                # Reset retry count on success
+                self.retry_count = 0
                 return result
-                
             except Exception as e:
                 last_error = e
                 
-                if not self._should_retry(e):
-                    logger.error(
-                        f"Max retries exceeded for {func.__name__}. "
-                        f"Last error: {str(e)}"
-                    )
-                    raise
+                # Update error statistics
+                error_type = type(e).__name__
+                self._error_counts[error_type] = self._error_counts.get(error_type, 0) + 1
+                self._last_error_times[error_type] = datetime.now()
                 
-                self._update_error_stats(e)
+                # Check if we should retry
+                if not await self._should_retry(e):
+                    break
+                
+                # Calculate delay and wait
                 delay = self._get_retry_delay()
-                
-                logger.warning(
-                    f"Attempt {attempt + 1} failed for {func.__name__}. "
-                    f"Retrying in {delay:.2f} seconds. Error: {str(e)}"
-                )
-                
+                logger.info(f"Retrying after {delay:.2f}s (attempt {self.retry_count + 1}/{self.retry_config.max_retries})")
                 await asyncio.sleep(delay)
+                
+                # Increment retry counter
+                self.increment_retry_count()
         
-        if last_error is None:
-            raise RuntimeError("Unexpected error: last_error is None after retry loop")
-        raise last_error
-    
-    def retry_decorator(self):
-        """Decorator for adding retry functionality to functions."""
-        def decorator(func: Callable) -> Callable:
-            @wraps(func)
-            async def async_wrapper(*args, **kwargs):
-                return await self.with_retry(func, *args, **kwargs)
-            
-            @wraps(func)
-            def sync_wrapper(*args, **kwargs):
-                return self.with_retry(func, *args, **kwargs)
-            
-            return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-        
-        return decorator
-
-    def reset_retry_count(self) -> None:
-        """Reset the retry counter."""
-        self.retry_count = 0
-    
-    def increment_retry_count(self) -> None:
-        """Increment the retry counter."""
-        self.retry_count += 1 
+        # If we get here, all retries failed
+        raise last_error 

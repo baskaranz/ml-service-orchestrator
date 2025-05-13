@@ -1,9 +1,0 @@
-name: model-2-mock
-version: 1.0.0
-description: Mock model for testing
-endpoint: http://localhost:8002
-health_check: /health
-prediction_endpoint: /predict
-timeout: 30
-retry_count: 3
-retry_delay: 1

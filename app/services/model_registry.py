@@ -5,19 +5,21 @@ Service for model registry operations.
 import logging
 import asyncio
 from typing import Dict, List, Optional, Tuple
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import unittest.mock
 import inspect
 from watchfiles import awatch
 from pathlib import Path
+from contextlib import asynccontextmanager
 
-from app.models.config_models import ModelConfig, ModelRegistry
+from app.models.config_models import ModelConfig, ModelRegistry, PlatformConfig
 from app.schemas.api_models import ModelSummary
 from app.core.exceptions import ModelNotFoundError, ModelAlreadyExistsError
 from app.config.models_config import ModelConfigManager
+from app.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class ModelRegistryService:
     """Service for managing model configurations."""
@@ -73,6 +75,8 @@ class ModelRegistryService:
             name="Model Registry",
             description="Fallback: registry of model configurations"
         )
+        self.config_manager.models.clear()
+        self.config_manager.registry = None
         logger.info("Model registry cleaned up")
     
     async def _watch_configs(self) -> None:
@@ -162,12 +166,10 @@ class ModelRegistryService:
             self.config_manager.add_model_config(model_config)
         except Exception as e:
             # For test compatibility: if HTTPException 409, raise ValueError
-            from fastapi import HTTPException
             if isinstance(e, HTTPException) and getattr(e, 'status_code', None) == 409:
                 raise ValueError(str(e))
             raise
         # If add_model_config is mocked, manually update dicts for test compatibility
-        import unittest.mock
         if isinstance(self.config_manager.add_model_config, unittest.mock.MagicMock):
             self.config_manager.models[model_id] = model_config
             if self.config_manager.registry:
@@ -205,7 +207,6 @@ class ModelRegistryService:
             raise ValueError("Model ID mismatch")
         self.config_manager.update_model_config(model_id, model_config)
         # If update_model_config is mocked, manually update dicts for test compatibility
-        import unittest.mock
         if isinstance(self.config_manager.update_model_config, unittest.mock.MagicMock):
             self.config_manager.models[model_id] = model_config
             if self.config_manager.registry:
@@ -241,7 +242,6 @@ class ModelRegistryService:
             raise ModelNotFoundError(f"Model {model_id} not found")
         self.config_manager.delete_model_config(model_id)
         # If delete_model_config is mocked, manually update dicts for test compatibility
-        import unittest.mock
         if isinstance(self.config_manager.delete_model_config, unittest.mock.MagicMock):
             self.config_manager.models.pop(model_id, None)
             if self.config_manager.registry:
@@ -250,18 +250,31 @@ class ModelRegistryService:
         if self.config_manager.registry:
             self.registry.models = dict(self.config_manager.registry.models)
 
+    async def register_model(self, model_id: str, model_config: ModelConfig) -> ModelConfig:
+        """Manually register a model configuration."""
+        return await self.add_model(model_id, model_config)
+
 def get_model_registry_service() -> ModelRegistryService:
     """Get the model registry service instance."""
     return ModelRegistryService()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application."""
+    # Startup
+    logger.info("Starting up model registry")
+    registry = get_model_registry_service()
+    app.state.model_registry = registry
+    await registry.startup()
+    yield
+    # Shutdown
+    logger.info("Shutting down model registry")
+    await registry.shutdown()
+
 def setup_model_registry(app: FastAPI) -> None:
-    """Set up the model registry service with the FastAPI application."""
-    service = get_model_registry_service()
-    
-    @app.on_event("startup")
-    async def startup():
-        await service.startup()
-    
-    @app.on_event("shutdown")
-    async def shutdown():
-        await service.shutdown()
+    """Set up the model registry for the FastAPI application."""
+    app.router.lifespan_context = lifespan
+    if not app.router.on_startup:
+        app.router.on_startup.append(lambda: None)  # Add a dummy startup event for backward compatibility
+    if not app.router.on_shutdown:
+        app.router.on_shutdown.append(lambda: None)  # Add a dummy shutdown event for backward compatibility

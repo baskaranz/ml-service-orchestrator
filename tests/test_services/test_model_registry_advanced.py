@@ -7,10 +7,11 @@ import shutil
 
 import pytest
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
-from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig, LLMProviderConfig
+from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig, LLMProviderConfig, PlatformConfig
 from app.schemas.api_models import ModelSummary
-from app.services.model_registry import ModelRegistryService, setup_model_registry
+from app.services.model_registry import ModelRegistryService, setup_model_registry, get_model_registry_service
 from app.core.exceptions import ModelAlreadyExistsError
 
 
@@ -53,6 +54,14 @@ def llm_provider_config() -> LLMProviderConfig:
         max_retries=3,
         api_key="test-key"
     )
+
+
+@pytest.fixture
+def app():
+    """Create a FastAPI application for testing."""
+    app = FastAPI()
+    setup_model_registry(app)
+    return app
 
 
 @pytest.mark.asyncio
@@ -140,11 +149,11 @@ async def test_list_models_with_transformations(started_registry, llm_provider_c
         endpoint_url="http://test.com",
         version="1.0.0",
         active=True,
-        timeout=30.0,
+        timeout=30,
         max_retries=3,
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
-            reset_timeout=30.0
+            reset_timeout=30
         ),
         llm_provider=llm_provider_config
     )
@@ -172,11 +181,11 @@ async def test_add_model(started_registry, llm_provider_config):
         endpoint_url="http://new.com",
         version="1.0.0",
         active=True,
-        timeout=30.0,
+        timeout=30,
         max_retries=3,
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
-            reset_timeout=30.0
+            reset_timeout=30
         ),
         llm_provider=llm_provider_config
     )
@@ -200,11 +209,11 @@ async def test_add_model_already_exists(started_registry, llm_provider_config):
         endpoint_url="http://existing.com",
         version="1.0.0",
         active=True,
-        timeout=30.0,
+        timeout=30,
         max_retries=3,
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
-            reset_timeout=30.0
+            reset_timeout=30
         ),
         llm_provider=llm_provider_config
     )
@@ -238,11 +247,11 @@ async def test_get_model_found(started_registry, llm_provider_config):
         endpoint_url="http://test.com",
         version="1.0.0",
         active=True,
-        timeout=30.0,
+        timeout=30,
         max_retries=3,
         circuit_breaker=CircuitBreakerConfig(
             failure_threshold=5,
-            reset_timeout=30.0
+            reset_timeout=30
         ),
         llm_provider=llm_provider_config
     )
@@ -256,56 +265,50 @@ async def test_get_model_found(started_registry, llm_provider_config):
 
 
 @pytest.mark.asyncio
-async def test_setup_model_registry_with_app_context():
-    """Test setup_model_registry preserves existing app events."""
-    # Create a FastAPI app with existing event handlers
-    app = FastAPI()
+async def test_setup_model_registry_with_app_context(app):
+    """Test setting up model registry with FastAPI application context."""
+    # Create a test model config
+    model_config = ModelConfig(
+        id="test-model",
+        name="Test Model",
+        endpoint_url="http://example.com/model",
+        description="Test model for unit tests",
+        version="1.0.0",
+        timeout=30,
+        max_retries=3,
+        circuit_breaker=CircuitBreakerConfig(
+            failure_threshold=5,
+            reset_timeout=60,
+            exclude_exceptions=[]
+        ),
+        llm_provider=LLMProviderConfig(
+            type="test",
+            model_name="test-model",
+            api_key="test-key",
+            timeout=30,
+            max_retries=3
+        )
+    )
     
-    # Add existing event handlers
-    existing_startup_called = False
-    existing_shutdown_called = False
+    # Get the registry service
+    registry = get_model_registry_service()
     
-    @app.on_event("startup")
-    async def existing_startup():
-        nonlocal existing_startup_called
-        existing_startup_called = True
+    # Register the model
+    await registry.add_model("test-model", model_config)
     
-    @app.on_event("shutdown")
-    async def existing_shutdown():
-        nonlocal existing_shutdown_called
-        existing_shutdown_called = True
+    # Verify the model is registered
+    assert "test-model" in registry.config_manager.models
+    assert registry.config_manager.models["test-model"].id == "test-model"
     
-    # Mock the necessary classes and methods
-    with patch("app.services.model_registry.ModelRegistryService") as mock_service_cls, \
-         patch("app.services.model_registry.ModelConfigManager") as mock_manager_cls:
+    # Test the lifespan context manager
+    async with app.router.lifespan_context(app):
+        # Verify the registry is accessible through app state
+        assert hasattr(app.state, "model_registry")
+        assert app.state.model_registry is registry
         
-        # Mock service methods
-        mock_service = mock_service_cls.return_value
-        mock_service.startup = AsyncMock()
-        mock_service.shutdown = AsyncMock()
-        
-        # Set up the model registry
-        setup_model_registry(app)
-        
-        # Verify our event handler is still present
-        assert any(h.__name__ == "existing_startup" for h in app.router.on_startup)
-        
-        # Trigger all startup events
-        for handler in app.router.on_startup:
-            await handler()
-        
-        # Verify both handlers were called
-        assert existing_startup_called is True
-        mock_service.startup.assert_called_once()
-        
-        # Reset tracking
-        existing_startup_called = False
-        mock_service.startup.reset_mock()
-        
-        # Trigger all shutdown events
-        for handler in app.router.on_shutdown:
-            await handler()
-        
-        # Verify both handlers were called
-        assert existing_shutdown_called is True
-        mock_service.shutdown.assert_called_once()
+        # Verify the model is still registered
+        assert "test-model" in app.state.model_registry.config_manager.models
+        assert app.state.model_registry.config_manager.models["test-model"].id == "test-model"
+    
+    # Verify the registry is cleared after shutdown
+    assert len(registry.config_manager.models) == 0

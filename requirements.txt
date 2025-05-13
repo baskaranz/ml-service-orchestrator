@@ -9,3 +9,4 @@ httpx>=0.24.0
 pyyaml>=6.0.0
 prometheus_client>=0.16.0
 pybreaker>=0.7.0
+aiohttp>=3.8.0

@@ -26,7 +26,8 @@ class LLMErrorClassifier:
                 type="huggingface",
                 model_name="mistralai/Mistral-7B-Instruct-v0.2",
                 timeout=30,
-                max_retries=3
+                max_retries=3,
+                api_key="test-key"  # Default test key for development
             )
         
         self.llm = get_llm_provider(config)
@@ -37,13 +38,15 @@ class LLMErrorClassifier:
         Context: {context}
         
         Classify this error as one of:
-        1. Transient (should retry)
-        2. Permanent (should not retry)
-        3. Rate Limit (should retry with backoff)
-        4. Authentication (should not retry)
-        5. Input Validation (should not retry)
+        1. Transient (should retry) - Temporary issues like network timeouts, server overload
+        2. Permanent (should not retry) - Issues that won't be resolved by retrying
+        3. Rate Limit (should retry with backoff) - API rate limits or quota exceeded
+        4. Authentication (should not retry) - Invalid credentials or permissions
+        5. Input Validation (should not retry) - Invalid input data or parameters
         
-        Provide reasoning for your classification.
+        Provide your classification and reasoning in this format:
+        Classification: <one of the above categories>
+        Reasoning: <explanation for the classification>
         """
 
     async def classify_error(
@@ -53,13 +56,34 @@ class LLMErrorClassifier:
     ) -> Dict[str, Any]:
         """Classify an error using LLM."""
         try:
+            # Extract error details
+            error_type = type(error).__name__
+            error_message = str(error)
+            
+            # Build context
+            error_context = {
+                "error_type": error_type,
+                "error_message": error_message,
+                "status_code": getattr(error, "status_code", None),
+                "model_id": context.get("model_id") if context else None,
+                "retry_count": context.get("retry_count", 0) if context else 0,
+                "max_retries": context.get("max_retries", 3) if context else 3
+            }
+            
+            # Add any additional context
+            if context:
+                error_context.update(context)
+            
             prompt = self.prompt_template.format(
-                error_type=type(error).__name__,
-                error_message=str(error),
-                context=json.dumps(context or {})
+                error_type=error_type,
+                error_message=error_message,
+                context=json.dumps(error_context, indent=2)
             )
             
+            logger.info(f"Classifying error with prompt:\n{prompt}")
+            
             response = await self.llm.generate(prompt)
+            logger.info(f"LLM response:\n{response}")
             
             # Parse the response to extract classification and reasoning
             lines = response.strip().split("\n")
@@ -68,25 +92,45 @@ class LLMErrorClassifier:
             
             for line in lines:
                 if line.startswith("Classification:"):
-                    classification = line.split(":", 1)[1].strip()
+                    classification = line.split(":", 1)[1].strip().lower()
                 elif line.startswith("Reasoning:"):
                     reasoning.append(line.split(":", 1)[1].strip())
             
             if not classification:
                 raise ValueError("Could not parse classification from LLM response")
             
-            return {
+            # Normalize classification
+            classification = classification.lower()
+            if "transient" in classification:
+                classification = "transient"
+            elif "permanent" in classification:
+                classification = "permanent"
+            elif "rate limit" in classification:
+                classification = "rate_limit"
+            elif "auth" in classification:
+                classification = "authentication"
+            elif "input" in classification or "validation" in classification:
+                classification = "input_validation"
+            else:
+                classification = "unknown"
+            
+            result = {
                 "classification": classification,
                 "reasoning": "\n".join(reasoning) if reasoning else None,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "context": error_context
             }
+            
+            logger.info(f"Error classification result: {json.dumps(result, indent=2)}")
+            return result
         
         except Exception as e:
             logger.error(f"Error in LLM classification: {str(e)}")
             return {
                 "classification": "unknown",
                 "reasoning": f"Error in classification: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "context": context or {}
             }
 
 class SmartRetryHandler(BaseErrorHandler):

@@ -7,6 +7,7 @@ import sys
 import argparse
 from typing import Dict
 from contextlib import asynccontextmanager
+import logging
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
@@ -17,8 +18,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.routers import api_router
 from app.config.settings import settings
 from app.core.exceptions import setup_exception_handlers
-from app.utils.logging import get_logger
+from app.utils.logging import get_logger, setup_logging
 from app.config.models_config import ModelConfigManager
+from app.api.routers.orchestrator import _orchestrator
+
+logging.basicConfig(level=logging.DEBUG)
 
 logger = get_logger(__name__)
 
@@ -66,6 +70,9 @@ def create_app() -> FastAPI:
     
     print("Creating FastAPI application...", file=sys.stderr)
     
+    # Set up logging with DEBUG level
+    setup_logging(level=logging.DEBUG)
+    
     # Create a new registry for metrics to avoid duplicates
     registry = CollectorRegistry()
     
@@ -99,10 +106,11 @@ def create_app() -> FastAPI:
         # Create config manager for registry if needed
         if hasattr(model_registry_service, 'config_manager') and model_registry_service.config_manager is None:
             model_registry_service.config_manager = ModelConfigManager(
-                settings.CONFIG_DIR, 
-                settings.MODELS_REGISTRY_FILE
+                settings.MODELS_DIR
             )
         await model_registry_service.startup()
+        # Initialize orchestrator error handlers
+        await _orchestrator.initialize_error_handlers()
         try:
             yield
         finally:

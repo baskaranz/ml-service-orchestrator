@@ -2,10 +2,10 @@
 Orchestrator router for handling model requests.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.core.exceptions import ModelRequestError, CircuitBreakerError
 from app.models.config_models import ModelConfig
@@ -14,7 +14,7 @@ from app.services.orchestrator import Orchestrator
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
+router = APIRouter(tags=["orchestrator"])
 
 # Create a singleton instance of the orchestrator
 _orchestrator = Orchestrator()
@@ -24,7 +24,7 @@ def get_orchestrator() -> Orchestrator:
     return _orchestrator
 
 @router.post(
-    "/{model_id}",
+    "/models/{model_id}",
     response_model=Dict[str, Any],
     summary="Forward request to model",
     description="Forwards a request to the specified model endpoint"
@@ -32,15 +32,17 @@ def get_orchestrator() -> Orchestrator:
 async def forward_request(
     model_id: str,
     request: Request,
+    response: Response,
     model_registry: ModelRegistryService = Depends(get_model_registry_service),
     orchestrator: Orchestrator = Depends(get_orchestrator)
-) -> Dict[str, Any]:
+) -> Response:
     """
     Forward a request to a model.
     
     Args:
         model_id: Model ID
         request: Original FastAPI request
+        response: FastAPI response object
         model_registry: Model registry service
         orchestrator: Orchestrator service
         
@@ -50,14 +52,11 @@ async def forward_request(
     Raises:
         HTTPException: If the request fails
     """
-    logger.info(
-        f"Forwarding request to model: {model_id}",
-        extra={"path": request.url.path, "method": request.method}
-    )
-    
+    logger.debug(f"forward_request called for model {model_id}")
     try:
         # Get the model configuration
         model_config = model_registry.get_model_config(model_id)
+        logger.debug(f"Retrieved model config for {model_id}: {model_config}")
         
         # Forward the request
         response = await orchestrator.proxy_request(
@@ -66,8 +65,7 @@ async def forward_request(
             path_suffix="/predict"
         )
         
-        # Parse and return the response
-        return json.loads(response.body)
+        return response
         
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -81,7 +79,7 @@ async def forward_request(
         )
 
 @router.get(
-    "/{model_id}/stats",
+    "/models/{model_id}/stats",
     response_model=Dict[str, Any],
     summary="Get model statistics",
     description="Get statistics and error handling information for a specific model"
@@ -115,4 +113,35 @@ async def get_model_stats(
         raise HTTPException(
             status_code=500,
             detail=f"Error getting model stats: {str(e)}"
+        )
+
+@router.get(
+    "/models",
+    response_model=List[Dict[str, Any]],
+    summary="List registered models",
+    description="Retrieve a list of all registered models"
+)
+async def list_models(
+    model_registry: ModelRegistryService = Depends(get_model_registry_service)
+) -> List[Dict[str, Any]]:
+    """
+    List all registered models.
+    
+    Args:
+        model_registry: Model registry service
+        
+    Returns:
+        List of registered models
+        
+    Raises:
+        HTTPException: If there's an error retrieving the models
+    """
+    try:
+        models = model_registry.list_models()
+        return [model.dict() for model in models]
+    except Exception as e:
+        logger.error(f"Error listing models: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing models: {str(e)}"
         )

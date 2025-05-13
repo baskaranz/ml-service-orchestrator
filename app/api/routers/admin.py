@@ -194,3 +194,34 @@ async def reload_configs(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@router.post(
+    "/register-model",
+    response_model=ModelConfig,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a model",
+    description="Manually register a model configuration"
+)
+async def register_model(
+    request: CreateModelRequest,
+    model_registry: ModelRegistryService = Depends(get_model_registry_service)
+) -> ModelConfig:
+    """
+    Manually register a model configuration.
+    
+    Args:
+        request: Create model request
+        model_registry: Model registry service
+        
+    Returns:
+        Registered model configuration
+    """
+    if request.model.id is None:
+        raise HTTPException(status_code=400, detail={"error": "Model ID must not be None"})
+    try:
+        return await model_registry.register_model(request.model.id, request.model)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail={"error": str(e)})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})

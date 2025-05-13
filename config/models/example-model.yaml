@@ -1,0 +1,7 @@
+id: example-model
+name: Example Model
+endpoint_url: http://localhost:8001
+type: classification
+llm_provider:
+  type: huggingface
+  model_name: mistralai/Mistral-7B-Instruct-v0.2

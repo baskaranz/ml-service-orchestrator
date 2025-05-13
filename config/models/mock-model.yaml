@@ -1,0 +1,7 @@
+id: mock-model
+name: Mock Model
+endpoint_url: http://localhost:8001
+type: classification
+llm_provider:
+  type: ollama
+  model_name: mistral

@@ -26,13 +26,27 @@ class ModelErrorHandler(BaseErrorHandler):
         excluded_exceptions: Optional[list[Type[Exception]]] = None
     ):
         """Initialize the model error handler."""
+        # Use error handling configuration from model config if available
+        eh = getattr(model_config, 'error_handling', None)
+        basic = getattr(eh, 'basic', None) if eh is not None else None
+        if retry_config is None and basic is not None:
+            retry_config = RetryConfig(
+                max_retries=basic.max_retries,
+                initial_delay=basic.retry_delay,
+                max_delay=basic.max_retry_delay
+            )
         super().__init__(retry_config, excluded_exceptions)
         self.model_config = model_config
         self.error_classifier = None
         
-        # Initialize LLM error classifier if enabled
-        if (model_config.metadata.get('error_handling', {}).get('enabled', False) and 
-            model_config.metadata.get('error_handling', {}).get('llm_classification', False)):
+        # Initialize LLM error classifier if enabled and configured
+        if (
+            hasattr(model_config, 'error_handling') and 
+            model_config.error_handling is not None and
+            hasattr(model_config.error_handling, 'llm') and 
+            model_config.error_handling.llm is not None and
+            model_config.error_handling.llm.enabled
+        ):
             self.error_classifier = LLMErrorClassifier()
     
     async def _should_retry(self, error: Exception) -> bool:
@@ -73,7 +87,8 @@ class ModelErrorHandler(BaseErrorHandler):
                     logger.info("Retrying transient error")
                     return True
                 if classification['classification'] == 'rate_limit':
-                    if self.retry_count < self.model_config.max_retries:
+                    max_retries = self.model_config.error_handling.basic.max_retries if hasattr(self.model_config, 'error_handling') else 3
+                    if self.retry_count < max_retries:
                         logger.info("Retrying rate limit error")
                         return True
                     logger.info("Max retries reached for rate limit error")

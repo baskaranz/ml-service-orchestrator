@@ -1,0 +1,84 @@
+services:
+  # Main orchestrator service
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.fixed
+    ports:
+      - "${ORCHESTRATOR_PORT:-8000}:8000"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=local
+      - PORT=8000
+      - APP_NAME=orchestrator
+      - APP_VERSION=1.0.0
+      - DEBUG=true
+      - HOST=0.0.0.0
+      - WORKERS=1
+      - CONFIG_DIR=/app/config/local
+      - MODELS_DIR=/app/config/local/models
+      - APP_SETTINGS=config.local.DevelopmentConfig
+    volumes:
+      - ./config/local:/app/config/local
+      - ./logs:/app/logs
+    depends_on:
+      - mock-model-1
+      - mock-model-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - ml-network
+
+  # Mock Model 1
+  mock-model-1:
+    build:
+      context: .
+      dockerfile: mocks/Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      PYTHONUNBUFFERED: "1"
+      PORT: "8000"
+      MODEL_NAME: "mock-model-1"
+      MODEL_VERSION: "1.0.0"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ml-network
+
+  # Mock Model 2
+  mock-model-2:
+    build:
+      context: .
+      dockerfile: mocks/Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      PYTHONUNBUFFERED: "1"
+      PORT: "8000"
+      MODEL_NAME: "mock-model-2"
+      MODEL_VERSION: "1.0.0"
+      ACTIVE: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ml-network
+
+networks:
+  ml-network:
+    name: ml-network
+    driver: bridge

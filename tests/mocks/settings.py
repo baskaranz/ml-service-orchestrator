@@ -16,6 +16,9 @@ class TestSettings(BaseAppSettings):
         case_sensitive=True,
         extra="ignore"
     )
+    
+    # Test admin API key
+    ADMIN_API_KEY: str = "dev-admin-key"
 
 # Initialize settings
 settings = TestSettings()

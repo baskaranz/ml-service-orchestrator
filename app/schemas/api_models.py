@@ -24,11 +24,7 @@ class ModelSummary(BaseModel):
     """Summary of a model configuration."""
     id: str
     name: str
-    description: str
-    version: str
     active: bool = True
-    type: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
 
 class ErrorResponse(BaseModel):
     """Error response model."""

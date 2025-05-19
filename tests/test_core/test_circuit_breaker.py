@@ -92,9 +92,12 @@ def test_circuit_breaker_half_open_success():
     # Wait for reset timeout
     time.sleep(1.1)
     
-    # Execute successful function
-    result = cb.execute(success_func)
-    assert result == "success"
+    # Execute successful function twice (success_threshold=2)
+    result1 = cb.execute(success_func)
+    assert result1 == "success"
+    assert cb.state == CircuitState.HALF_OPEN
+    result2 = cb.execute(success_func)
+    assert result2 == "success"
     assert cb.state == CircuitState.CLOSED
     assert cb.failure_count == 0
 

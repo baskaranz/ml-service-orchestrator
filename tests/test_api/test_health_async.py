@@ -54,8 +54,15 @@ async def test_basic_health_check_async(app):
 
 
 @pytest.mark.asyncio
-async def test_detailed_health_check_async(app, mock_settings):
+@patch("app.services.model_registry.ModelRegistryService.list_models", new_callable=MagicMock)
+async def test_detailed_health_check_async(mock_list_models, app, mock_settings):
     """Test the detailed health check endpoint asynchronously."""
+    # Return a list of mock models
+    mock_model = MagicMock()
+    mock_model.id = "test_model_1"
+    mock_model.name = "Test Model 1"
+    mock_model.active = True
+    mock_list_models.return_value = [mock_model]
     client = TestClient(app)
     response = client.get("/health/details")
     assert response.status_code == 200

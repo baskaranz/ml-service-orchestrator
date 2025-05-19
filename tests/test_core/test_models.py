@@ -17,17 +17,18 @@ from app.models.config_models import (
 
 def test_model_config_validation():
     """Test ModelConfig validation."""
+    from app.models.config_models import BasicCircuitBreakerConfig
     # Test with default values
     config = ModelConfig(
         id="test_model_1",
         name="Test Model",
-        description="A test model",
         endpoint_url="http://localhost:8000/predict",
-        version="1.0.0",
         active=True,
         circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=5,
-            reset_timeout=30.0
+            basic=BasicCircuitBreakerConfig(
+                failure_threshold=5,
+                reset_timeout=30.0
+            )
         )
     )
     assert config.name == "Test Model"
@@ -36,25 +37,25 @@ def test_model_config_validation():
     config2 = ModelConfig(
         id="test_model_2",
         name="Another Model",
-        description="Another test model",
         endpoint_url="http://localhost:8001/predict",
-        version="2.0.0",
         active=False,
         circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=3,
-            reset_timeout=15.0
+            basic=BasicCircuitBreakerConfig(
+                failure_threshold=3,
+                reset_timeout=15.0
+            )
         )
     )
     assert config2.name == "Another Model"
     assert config2.active is False
     # Test CircuitBreakerConfig validation
     with pytest.raises(ValidationError):
-        CircuitBreakerConfig(
+        BasicCircuitBreakerConfig(
             failure_threshold=-1,
             reset_timeout=30.0
         )
     with pytest.raises(ValidationError):
-        CircuitBreakerConfig(
+        BasicCircuitBreakerConfig(
             failure_threshold=5,
             reset_timeout=-1.0
         )
@@ -62,31 +63,36 @@ def test_model_config_validation():
 
 def test_circuit_breaker_settings_validation():
     """Test CircuitBreakerSettings validation."""
+    from app.models.config_models import BasicCircuitBreakerConfig
     # Test with default values
     default_settings = CircuitBreakerConfig(
-        failure_threshold=5,
-        reset_timeout=30.0
+        basic=BasicCircuitBreakerConfig(
+            failure_threshold=5,
+            reset_timeout=30.0
+        )
     )
-    assert default_settings.failure_threshold == 5
-    assert default_settings.reset_timeout == 30.0
+    assert default_settings.basic.failure_threshold == 5
+    assert default_settings.basic.reset_timeout == 30.0
     
     # Test with custom values
     custom_settings = CircuitBreakerConfig(
-        failure_threshold=3,
-        reset_timeout=15.0
+        basic=BasicCircuitBreakerConfig(
+            failure_threshold=3,
+            reset_timeout=15.0
+        )
     )
-    assert custom_settings.failure_threshold == 3
-    assert custom_settings.reset_timeout == 15.0
+    assert custom_settings.basic.failure_threshold == 3
+    assert custom_settings.basic.reset_timeout == 15.0
     
     # Test with invalid values
     with pytest.raises(ValidationError):
-        CircuitBreakerConfig(
+        BasicCircuitBreakerConfig(
             failure_threshold=-1,
             reset_timeout=30.0
         )
     
     with pytest.raises(ValidationError):
-        CircuitBreakerConfig(
+        BasicCircuitBreakerConfig(
             failure_threshold=5,
             reset_timeout=-1.0
         )
@@ -149,32 +155,23 @@ def test_required_arguments_validation():
     ModelConfig(
         id="test_model_3",
         name="Test Model",
-        description="Test model description",
-        version="1.0.0",
-        endpoint_url="http://localhost:8000/predict",
-        timeout=30.0,
-        max_retries=3,
-        active=True
+        endpoint_url="http://localhost:8000/predict"
     )
 
     # Now test missing id
-    model_args = dict(
-        name="Test Model",
-        description="Test model description",
-        version="1.0.0",
-        endpoint_url="http://localhost:8000/predict",
-        timeout=30.0,
-        max_retries=3,
-        active=True
-    )
     with pytest.raises(ValidationError) as exc_info:
-        ModelConfig(**{k: v for k, v in model_args.items() if k != "id"})
+        ModelConfig(
+            name="Test Model",
+            endpoint_url="http://localhost:8000/predict"
+        )
     assert "id" in str(exc_info.value)
 
     # Now test missing endpoint_url
-    model_args_with_id = dict(model_args, id="test_model_4")
     with pytest.raises(ValidationError) as exc_info:
-        ModelConfig(**{k: v for k, v in model_args_with_id.items() if k != "endpoint_url"})
+        ModelConfig(
+            id="test_model_4",
+            name="Test Model"
+        )
     assert "endpoint_url" in str(exc_info.value)
 
 

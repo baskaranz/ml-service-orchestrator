@@ -1,0 +1,41 @@
+id: example-model-stg
+name: "Example Model (Staging)"
+endpoint_url: "https://stg-api.example.com/v1/predict"
+active: true
+timeout: 30.0
+max_retries: 3
+
+# Health check configuration
+health_check:
+  enabled: true
+  endpoint: "/health"
+  interval: 30
+  timeout: 5
+  failure_threshold: 3
+  success_threshold: 2
+
+# Request headers
+headers:
+  Content-Type: "application/json"
+  X-API-Version: "1.0"
+  X-Environment: "staging"
+
+# Connection pooling
+max_connections: 100
+max_keepalive_connections: 50
+keepalive_timeout: 60
+pool_connections: 10
+pool_maxsize: 100
+
+# Authentication
+auth:
+  enabled: true
+  type: "api_key"
+  header_name: "X-API-Key"
+  value: "${EXAMPLE_API_KEY_STG}"  # Will be replaced with environment variable
+
+# Monitoring and logging
+monitoring:
+  enabled: true
+  metrics_interval: 60
+  log_level: "INFO"

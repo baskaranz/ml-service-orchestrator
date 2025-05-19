@@ -36,6 +36,91 @@ components:
             threshold: 0.5
             max_results: 10
 
+    ModelConfig:
+      type: object
+      required:
+        - id
+        - name
+        - endpoint_url
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the model
+        name:
+          type: string
+          description: Display name of the model
+        endpoint_url:
+          type: string
+          description: URL endpoint for model predictions
+        active:
+          type: boolean
+          description: Whether the model is active
+          default: true
+        platform:
+          type: object
+          description: Platform configuration for the model
+          properties:
+            timeout:
+              type: number
+              description: Request timeout in seconds
+            max_retries:
+              type: integer
+              description: Maximum number of retry attempts
+            health_check:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether health checks are enabled
+                interval:
+                  type: integer
+                  description: Time between health checks in seconds
+                timeout:
+                  type: number
+                  description: Health check request timeout in seconds
+                failure_threshold:
+                  type: integer
+                  description: Number of failures before marking unhealthy
+                success_threshold:
+                  type: integer
+                  description: Number of successes to mark as healthy
+            circuit_breaker:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether circuit breaker is enabled
+                failure_threshold:
+                  type: integer
+                  description: Number of failures before opening the circuit
+                reset_timeout:
+                  type: number
+                  description: Time in seconds before attempting to close the circuit
+                half_open_timeout:
+                  type: number
+                  description: Time in seconds to stay in half-open state
+                success_threshold:
+                  type: integer
+                  description: Number of successful calls to close the circuit
+            error_handling:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  description: Whether error handling is enabled
+                max_retries:
+                  type: integer
+                  description: Maximum number of retry attempts
+                retry_delay:
+                  type: number
+                  description: Initial delay between retries in seconds
+                max_retry_delay:
+                  type: number
+                  description: Maximum delay between retries in seconds
+                backoff_factor:
+                  type: number
+                  description: Multiplier for exponential backoff
+
     PredictionResponse:
       type: object
       required:

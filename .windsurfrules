@@ -1,0 +1,49 @@
+- Use Python 3.8+ as the primary backend language
+- Use the virtual environment for Python packages (venv) in the root directory .venv
+- Implement APIs using FastAPI for modern, high-performance services
+- Follow PEP 8 style guidelines for Python code
+- Use consistent naming conventions across the codebase
+- Leverage type hints for better code readability and IDE support
+- Write comprehensive docstrings in Google or NumPy format
+- Organize FastAPI projects with a clear structure (app/ containing api/, core/, models/, schemas/, services/, utils/)
+- Follow RESTful conventions where appropriate
+- Use proper HTTP methods for different operations
+- Return consistent response structures
+- Apply correct status codes (200, 201, 400, 401, 403, 404, 500)
+- Implement versioning for API endpoints (e.g., `/api/v1/resource`)
+- Create intuitive, resource-oriented endpoint names
+- Use query parameters for filtering, sorting, and pagination
+- Implement proper error handling and validation
+- Use Pydantic for request/response validation
+- Create comprehensive Pydantic models with proper validation
+- Implement proper data transformation pipelines
+- Handle edge cases and validate inputs thoroughly
+- Use appropriate data formats for different scenarios
+- Implement database connection pooling for performance
+- Use JWT-based authentication
+- Implement proper role-based access control
+- Validate all user inputs
+- Use HTTPS in production
+- Apply rate limiting for public endpoints
+- Never hardcode credentials in source code
+- Use environment variables for configuration
+- Use async handlers for I/O-bound operations
+- Implement caching for frequent requests
+- Use background tasks for non-critical processing
+- Apply proper database indexing and query optimization
+- Implement connection pooling
+- Write unit tests for all core functionality
+- Create integration tests for API endpoints
+- Implement end-to-end tests for critical flows
+- Use pytest for testing framework
+- Mock external dependencies
+- Test error scenarios
+- Create comprehensive API documentation with examples
+- Document request/response models
+- Use Swagger/OpenAPI for interactive documentation
+- Containerize the application with Docker
+- Implement CI/CD pipelines
+- Configure environment-specific settings
+- Set up proper logging in production
+- Implement health checks and monitoring
+- Apply blue/green deployment strategy

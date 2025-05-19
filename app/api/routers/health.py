@@ -5,12 +5,15 @@ Health API routers for system and registry health endpoints.
 import platform
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.config.settings import settings
 from app.schemas.api_models import ComponentHealth, HealthResponse, HealthStatus, ModelSummary
 from app.services.model_registry import ModelRegistryService, get_model_registry_service
 from app.utils.logging import get_logger
+from app.api.dependencies.orchestrator import get_orchestrator_async as get_orchestrator
+from app.services.orchestrator import Orchestrator
+from app.core.exceptions import ModelNotFoundError
 
 logger = get_logger(__name__)
 
@@ -27,15 +30,43 @@ async def health_check() -> HealthResponse:
     """
     Basic health check endpoint.
     
+    This endpoint provides a basic health check of the service.
+    For a more detailed health check, use /health/detailed
+    
     Returns:
         Health status response
     """
-    return HealthResponse(
-        status=HealthStatus.OK,
-        version=settings.APP_VERSION,
-        models=[],
-        components={}
-    )
+    try:
+        # Get the orchestrator instance asynchronously
+        orchestrator = await get_orchestrator()
+        logger.info(f"Health check endpoint using orchestrator instance {id(orchestrator)}")
+        
+        # Gather active models from orchestrator
+        models = []
+        if hasattr(orchestrator, '_models') and orchestrator._models:
+            models = [
+                ModelSummary(id=m.id, name=m.name, active=m.active)
+                for m in orchestrator._models.values() 
+                if hasattr(m, 'active') and hasattr(m, 'id') and hasattr(m, 'name') and m.active
+            ]
+        else:
+            logger.warning("No models found in orchestrator")
+        
+        # Always return OK status for basic health check
+        return HealthResponse(
+            status=HealthStatus.OK,
+            version=settings.APP_VERSION,
+            models=models,
+            components={}
+        )
+    except Exception as e:
+        logger.error(f"Error in health check: {str(e)}", exc_info=True)
+        return HealthResponse(
+            status=HealthStatus.ERROR,
+            version=settings.APP_VERSION,
+            models=[],
+            components={"error": str(e)}
+        )
 
 
 @router.get(
@@ -62,8 +93,6 @@ async def detailed_health_check(
         ModelSummary(
             id=model.id,
             name=model.name,
-            description=model.description,
-            version=model.version,
             active=model.active
         ) for model in models
     ]
@@ -88,6 +117,64 @@ async def detailed_health_check(
         models=model_summaries,
         components=components
     )
+
+
+@router.get(
+    "/health/models/{model_id}",
+    response_model=HealthResponse,
+    summary="Model health check",
+    description="Returns the health status of a specific model"
+)
+async def model_health_check(
+    model_id: str,
+    model_registry: ModelRegistryService = Depends(get_model_registry_service)
+) -> HealthResponse:
+    """
+    Get the health status of a specific model.
+    
+    Args:
+        model_id: ID of the model to check
+        model_registry: Model registry service
+        
+    Returns:
+        Health status response for the model
+        
+    Raises:
+        HTTPException: If the model is not found
+    """
+    try:
+        # Get the model from the registry
+        model = model_registry.get_model(model_id)
+        
+        # Create a simple health response for the model
+        return HealthResponse(
+            status=HealthStatus.OK if model.active else HealthStatus.UNHEALTHY,
+            version=settings.APP_VERSION,
+            models=[
+                ModelSummary(
+                    id=model.id,
+                    name=model.name,
+                    active=model.active
+                )
+            ],
+            components={
+                "model": ComponentHealth(
+                    status=HealthStatus.OK if model.active else HealthStatus.UNHEALTHY,
+                    details={
+                        "id": model.id,
+                        "name": model.name,
+                        "active": model.active,
+                        "endpoint_url": model.endpoint_url
+                    }
+                )
+            }
+        )
+    except ModelNotFoundError:
+        logger.warning(f"Model not found: {model_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {model_id} not found"
+        )
 
 
 def get_system_health() -> ComponentHealth:

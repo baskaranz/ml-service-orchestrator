@@ -17,7 +17,7 @@ MODELS = [
             "name": "Mock Model 1",
             "description": "First mock model for testing",
             "version": "1.0.0",
-            "endpoint_url": "http://mock-model-1:8000/predict",
+            "endpoint_url": "http://mock-model-1:8000",
             "active": True,
             "platform": {
                 "name": "mock",
@@ -31,7 +31,7 @@ MODELS = [
             "name": "Mock Model 2",
             "description": "Second mock model for testing",
             "version": "1.0.0",
-            "endpoint_url": "http://mock-model-2:8000/predict",
+            "endpoint_url": "http://mock-model-2:8000",
             "active": True,
             "platform": {
                 "name": "mock",
@@ -43,12 +43,13 @@ MODELS = [
 
 def register_model(model_config: Dict[str, Any]) -> bool:
     """Register a single model with the orchestrator."""
-    url = f"{ORCHESTRATOR_URL}/admin/register-model"
+    url = f"{ORCHESTRATOR_URL}/admin/models"
     headers = {
-        "X-API-Key": "dev-admin-key"  # Default admin key from test settings
+        "X-API-Key": "test-admin-key",  # Admin key from settings
+        "Content-Type": "application/json"
     }
     try:
-        response = requests.post(url, json=model_config, headers=headers, timeout=10)
+        response = requests.post(url, json=model_config, headers=headers, timeout=30)
         response.raise_for_status()
         print(f"✅ Successfully registered model: {model_config['model']['id']}")
         return True

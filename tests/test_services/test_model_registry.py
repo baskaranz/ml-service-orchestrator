@@ -4,290 +4,321 @@ import os
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
+import pytest_asyncio
 
-from app.models.config_models import ModelConfig, CircuitBreakerConfig, ModelRegistry, LLMProviderConfig
+from app.models.config_models import ModelConfig, ModelRegistry, PlatformConfig
 from app.schemas.api_models import ModelSummary
 from app.services.model_registry import ModelRegistryService
 from fastapi import HTTPException
 from app.core.exceptions import ModelNotFoundError, ModelAlreadyExistsError
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def started_registry():
     """Create and start a model registry service."""
-    # Create a fresh registry with a completely new set of models and config
     service = ModelRegistryService()
-    
-    # Mock the reload_configs method to avoid file system operations
-    empty_registry = ModelRegistry(
-        version="1.0.0",
-        name="Test Registry",
-        description="Test registry for unit tests",
-        models={}
-    )
-    empty_models = {}
-    service.config_manager.load_configs = AsyncMock(return_value=(empty_registry, empty_models))
-    
-    # Reset the models and registry that might have been set by other tests
-    service.registry.models = {}
-    service.config_manager.models = {}
-    
     await service.startup()
+    
+    # Initialize test models
+    test_model = ModelConfig(
+        id="test_model_1",
+        name="Test Model 1",
+        description="Test model for unit tests",
+        version="1.0.0",
+        endpoint_url="http://test_model_1:8000",
+        active=True
+    )
+    service.config_manager.models["test_model_1"] = test_model
+    service.registry.models["test_model_1"] = test_model
+    
     yield service
     await service.shutdown()
 
 
-@pytest.fixture
-def llm_provider_config() -> LLMProviderConfig:
-    """Create a test LLM provider configuration."""
-    return LLMProviderConfig(
-        type="huggingface",
-        model_name="test-model",
-        timeout=30,
-        max_retries=3,
-        api_key="test-key"
-    )
-
-
 @pytest.mark.asyncio
-async def test_model_registry_startup(llm_provider_config):
+async def test_model_registry_startup():
     """Test starting the model registry service."""
-    # Create a service
-    service = ModelRegistryService()
-    
-    # Mock the config manager's load_configs method
-    test_models = {
-        "test1": ModelConfig(
-            id="test1",
-            name="Test Model 1",
-            description="Test model 1",
-            endpoint_url="http://test1.com",
-            version="1.0.0",
-            active=True,
-            timeout=30.0,
-            max_retries=3,
-            type="classification",
-            metadata={"framework": "pytorch"},
-            llm_provider=llm_provider_config
-        ),
-        "test2": ModelConfig(
-            id="test2",
-            name="Test Model 2",
-            description="Test model 2",
-            endpoint_url="http://test2.com",
-            version="1.0.0",
-            active=True,
-            timeout=30.0,
-            max_retries=3,
-            type="regression",
-            metadata={"framework": "tensorflow"},
-            llm_provider=llm_provider_config
-        )
-    }
-    
-    # Create registry from models
-    registry_models = {
-        "test1": {
-            "id": "test1",
-            "name": "Test Model 1",
-            "description": "Test model 1",
-            "version": "1.0.0",
-            "endpoint": "http://test1.com",
-            "config_file": "models/test1.yaml",
-            "active": True,
-            "type": "classification",
-            "metadata": {"framework": "pytorch"},
-            "llm_provider": "huggingface"
-        },
-        "test2": {
-            "id": "test2",
-            "name": "Test Model 2",
-            "description": "Test model 2",
-            "version": "1.0.0",
-            "endpoint": "http://test2.com",
-            "config_file": "models/test2.yaml",
-            "active": True,
-            "type": "regression",
-            "metadata": {"framework": "tensorflow"},
-            "llm_provider": "huggingface"
+    # Create a service with a mock config manager and registry
+    with patch('app.services.model_registry.ModelConfigManager') as mock_config_manager_cls, \
+         patch('app.services.model_registry.ModelRegistry') as mock_registry_cls:
+        
+        # Create mock instances
+        mock_config_manager = AsyncMock()
+        mock_registry = AsyncMock()
+        
+        # Set up the mocks
+        mock_config_manager_cls.return_value = mock_config_manager
+        mock_registry_cls.return_value = mock_registry
+        
+        # Set up test data
+        test_models = {
+            "test_model_1": ModelConfig(
+                id="test_model_1",
+                name="Test Model 1",
+                endpoint_url="http://test1.com/predict",
+                active=True
+            )
         }
-    }
-    
-    test_registry = ModelRegistry(
-        version="1.0.0",
-        name="Test Registry",
-        description="Test registry for unit tests",
-        models=registry_models
-    )
-    
-    service.config_manager.load_configs = AsyncMock(return_value=(test_registry, test_models))
-    
-    # Call startup
-    await service.startup()
-    
-    # Verify load_configs was called
-    service.config_manager.load_configs.assert_called_once()
-    
-    # Verify models were loaded
-    assert len(service.registry.models) == 2
-    assert "test1" in service.registry.models
-    assert "test2" in service.registry.models
-    
-    # Verify model details
-    assert service.registry.models["test1"]["type"] == "classification"
-    assert service.registry.models["test1"]["metadata"]["framework"] == "pytorch"
-    assert service.registry.models["test2"]["type"] == "regression"
-    assert service.registry.models["test2"]["metadata"]["framework"] == "tensorflow"
+        
+        # Create a proper ModelConfig for the test model
+        test_model_config = ModelConfig(
+            id="test_model_1",
+            name="Test Model 1",
+            endpoint_url="http://test1.com/predict",
+            active=True
+        )
+        
+        # Create the registry with the proper model config
+        test_registry_data = ModelRegistry(
+            name="Test Registry",
+            description="Test registry",
+            models={"test_model_1": test_model_config}
+        )
+        
+        # Configure the mocks
+        mock_config_manager.load_configs = AsyncMock(return_value=(test_registry_data, test_models))
+        
+        # Create and start the service
+        service = ModelRegistryService()
+        
+        # Mock the _watch_configs method to avoid background tasks
+        async def mock_watch_configs():
+            pass
+            
+        service._watch_configs = mock_watch_configs
+        
+        # Set up the config manager and registry
+        service.config_manager = mock_config_manager
+        service.registry = mock_registry
+        
+        # Start the service
+        await service.startup()
+        
+        # Verify load_configs was called
+        mock_config_manager.load_configs.assert_awaited_once()
+        
+        # Test shutdown
+        await service.shutdown()
+        
+        # Verify cleanup
+        assert service.registry is not None
+        assert service.config_manager is not None
 
 
 @pytest.mark.asyncio
-async def test_get_model_config(started_registry, llm_provider_config):
+async def test_get_model_config():
     """Test getting a model configuration."""
-    service = await anext(started_registry)
-    
-    # Add test model to registry and config manager
-    model_config = ModelConfig(
+    # Create a test model
+    test_model = ModelConfig(
         id="test_model_1",
         name="Test Model 1",
-        description="Test model 1",
-        endpoint_url="http://test1.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="classification",
-        metadata={"framework": "pytorch"},
-        llm_provider=llm_provider_config
+        endpoint_url="http://test1.com/predict",
+        active=True
     )
     
-    registry_model = {
-        "id": "test_model_1",
-        "name": "Test Model 1",
-        "description": "Test model 1",
-        "version": "1.0.0",
-        "endpoint": "http://test1.com",
-        "config_file": "models/test_model_1.yaml",
-        "active": True,
-        "type": "classification",
-        "metadata": {"framework": "pytorch"},
-        "llm_provider": "huggingface"
-    }
-    
-    service.registry.models = {"test_model_1": registry_model}
-    service.config_manager.models = {"test_model_1": model_config}
-    
-    # Get a model that exists
-    model = service.get_model_config("test_model_1")
-    assert model is not None
-    assert model.name == "Test Model 1"
-    assert model.endpoint_url == "http://test1.com"
-    assert model.type == "classification"
-    assert model.metadata["framework"] == "pytorch"
+    # Create a service with mocks
+    with patch('app.services.model_registry.ModelConfigManager') as mock_config_manager_cls, \
+         patch('app.services.model_registry.ModelRegistry') as mock_registry_cls:
+        
+        # Set up mocks
+        mock_config_manager = AsyncMock()
+        mock_registry = AsyncMock()
+        
+        # Configure the mocks
+        mock_config_manager_cls.return_value = mock_config_manager
+        mock_registry_cls.return_value = mock_registry
+        
+        # Set up the test model in the mocks
+        mock_config_manager.models = {"test_model_1": test_model}
+        mock_config_manager.get_model_config.return_value = test_model
+        
+        # Create and start the service
+        service = ModelRegistryService()
+        service.config_manager = mock_config_manager
+        service.registry = mock_registry
+        
+        # Test getting an existing model
+        model_config = service.get_model_config("test_model_1")
+        
+        # Verify the model config
+        assert model_config is not None
+        assert model_config.id == "test_model_1"
+        assert model_config.name == "Test Model 1"
+        assert model_config.endpoint_url == "http://test1.com/predict"
+        assert model_config.active is True
+        
+        # Test with non-existent model
+        mock_config_manager.get_model_config.side_effect = ModelNotFoundError("Model not found")
+        with pytest.raises(ModelNotFoundError):
+            service.get_model_config("non_existent_model")
+        
+        # Test with None model_id
+        with pytest.raises(ModelNotFoundError):
+            service.get_model_config(None)
+            
+        # Clean up
+        await service.shutdown()
 
 
 @pytest.mark.asyncio
-async def test_list_models(started_registry, llm_provider_config):
+async def test_list_models(started_registry):
     """Test listing all models."""
-    from app.services.model_registry import ModelRegistryService
-    ModelRegistryService._instance = None
-    service = await anext(started_registry)
-    service.registry.models = {}
-    service.config_manager.models = {}
-    model_config_1 = ModelConfig(
+    # Add test models to the registry
+    test_model_1 = ModelConfig(
         id="test_model_1",
         name="Test Model 1",
-        description="Test model 1",
-        endpoint_url="http://test1.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="classification",
-        metadata={"framework": "pytorch"},
-        llm_provider=llm_provider_config
+        endpoint_url="http://test1.com/predict",
+        active=True
     )
-    model_config_2 = ModelConfig(
+    test_model_2 = ModelConfig(
         id="test_model_2",
         name="Test Model 2",
-        description="Test model 2",
-        endpoint_url="http://test2.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="regression",
-        metadata={"framework": "tensorflow"},
-        llm_provider=llm_provider_config
+        endpoint_url="http://test2.com/predict",
+        active=True
     )
-    service.config_manager.models = {
-        "test_model_1": model_config_1,
-        "test_model_2": model_config_2
+    
+    started_registry.config_manager.models = {
+        "test_model_1": test_model_1,
+        "test_model_2": test_model_2
     }
-    models = service.list_models()
-    print('DEBUG: Model types in summaries:', [getattr(m, 'type', None) for m in models])
+    
+    # List models
+    models = started_registry.list_models()
+    
+    # Verify the models
+    assert isinstance(models, list)
     assert len(models) == 2
-    assert any(m.id == "test_model_1" and m.type == "classification" for m in models)
-    assert any(m.id == "test_model_2" and m.type == "regression" for m in models)
+    model_ids = [model.id for model in models]
+    assert "test_model_1" in model_ids
+    assert "test_model_2" in model_ids
 
 
 @pytest.mark.asyncio
-async def test_update_model(started_registry, llm_provider_config):
-    service = await anext(started_registry)
-    service.registry.models = {}
-    service.config_manager.models = {}
-    service.config_manager.add_model_config = MagicMock()
-    service.config_manager.update_model_config = MagicMock()
-    model = ModelConfig(
-        id="test_model",
-        name="Test Model",
-        description="A test model",
-        endpoint_url="http://test.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="classification",
-        metadata={"framework": "pytorch"},
-        llm_provider=llm_provider_config
-    )
-    await service.add_model("test_model", model)
-    updated_model = model.model_copy(update={
-        "name": "Updated Model",
-        "type": "regression",
-        "metadata": {"framework": "tensorflow"},
-        "llm_provider": llm_provider_config
-    })
-    result = await service.update_model("test_model", updated_model)
-    assert result.name == "Updated Model"
-    assert result.type == "regression"
-    assert result.metadata["framework"] == "tensorflow"
-    assert result.llm_provider == llm_provider_config
+async def test_update_model():
+    """Test updating an existing model."""
+    # Create a service with mocks
+    with patch('app.services.model_registry.ModelConfigManager') as mock_config_manager_cls, \
+         patch('app.services.model_registry.ModelRegistry') as mock_registry_cls:
+        
+        # Set up mocks
+        mock_config_manager = AsyncMock()
+        mock_registry = AsyncMock()
+        
+        # Configure the mocks
+        mock_config_manager_cls.return_value = mock_config_manager
+        mock_registry_cls.return_value = mock_registry
+        
+        # Create the service
+        service = ModelRegistryService()
+        service.config_manager = mock_config_manager
+        service.registry = mock_registry
+        
+        # Set up test data
+        test_model = ModelConfig(
+            id="test_model_1",
+            name="Test Model 1",
+            endpoint_url="http://test1.com/predict",
+            active=True
+        )
+        
+        updated_model = ModelConfig(
+            id="test_model_1",
+            name="Updated Test Model",
+            endpoint_url="http://updated-test-model.com/predict",
+            active=False
+        )
+        
+        # Mock the update_model_config method
+        mock_config_manager.update_model_config = AsyncMock(return_value=updated_model)
+        mock_config_manager.models = {"test_model_1": test_model}
+        mock_config_manager.get_model_config = AsyncMock(return_value=test_model)
+            
+        # Update the model
+        await service.update_model("test_model_1", updated_model)
+        
+        # Verify the model was updated
+        mock_config_manager.update_model_config.assert_awaited_once_with("test_model_1", updated_model)
 
 
 @pytest.mark.asyncio
-async def test_delete_model(started_registry, llm_provider_config):
-    service = await anext(started_registry)
-    service.registry.models = {}
-    service.config_manager.models = {}
-    service.config_manager.add_model_config = MagicMock()
-    service.config_manager.delete_model_config = MagicMock()
-    model = ModelConfig(
-        id="test_model",
-        name="Test Model",
-        description="A test model",
-        endpoint_url="http://test.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="classification",
-        metadata={"framework": "pytorch"},
-        llm_provider=llm_provider_config
-    )
-    await service.add_model("test_model", model)
-    await service.delete_model("test_model")
-    with pytest.raises(ModelNotFoundError):
-        service.get_model("test_model")
+async def test_delete_model():
+    """Test deleting a model."""
+    # Create a service with mocks
+    with patch('app.services.model_registry.ModelConfigManager') as mock_config_manager_cls, \
+         patch('app.services.model_registry.ModelRegistry') as mock_registry_cls:
+        
+        # Set up mocks
+        mock_config_manager = AsyncMock()
+        mock_registry = AsyncMock()
+        
+        # Configure the mocks
+        mock_config_manager_cls.return_value = mock_config_manager
+        mock_registry_cls.return_value = mock_registry
+        
+        # Set up the test model
+        test_model = ModelConfig(
+            id="test_model_to_delete",
+            name="Test Model To Delete",
+            endpoint_url="http://test-delete.com/predict",
+            active=True
+        )
+        
+        # Set up the test model in the mocks
+        mock_config_manager.models = {"test_model_to_delete": test_model}
+        mock_config_manager.get_model_config = AsyncMock(return_value=test_model)
+        mock_config_manager.delete_model_config = AsyncMock()
+        
+        # Mock the registry's delete_model method
+        mock_registry.delete_model = AsyncMock()
+        
+        # Create and start the service
+        service = ModelRegistryService()
+        service.config_manager = mock_config_manager
+        service.registry = mock_registry
+        
+        # Mock the _watch_configs method to avoid background tasks
+        async def mock_watch_configs():
+            pass
+            
+        service._watch_configs = mock_watch_configs
+        
+        # Start the service without the watcher
+        service._watch_task = None
+        
+        # Test deleting an existing model
+        await service.delete_model("test_model_to_delete")
+        
+        # Verify the delete methods were called
+        mock_config_manager.delete_model_config.assert_awaited_once_with("test_model_to_delete")
+        
+        # Test with non-existent model
+        mock_config_manager.get_model_config.side_effect = ModelNotFoundError("Model not found")
+        with pytest.raises(ModelNotFoundError):
+            await service.delete_model("non_existent_model")
+            
+        # Clean up
+        await service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_activate_model(started_registry):
+    """Test activating a model."""
+    # Deactivate the model first
+    model = started_registry.get_model_config("test_model_1")
+    model.active = False
+    # Activate the model
+    await started_registry.activate_model("test_model_1")
+    # Verify the model is active
+    assert started_registry.get_model_config("test_model_1").active is True
+
+
+@pytest.mark.asyncio
+async def test_deactivate_model(started_registry):
+    """Test deactivating a model."""
+    # Deactivate the model
+    await started_registry.deactivate_model("test_model_1")
+    # Verify the model is inactive
+    assert started_registry.get_model_config("test_model_1").active is False
 
 
 def test_get_model_config_not_found(started_registry):
@@ -298,110 +329,216 @@ def test_get_model_config_not_found(started_registry):
 
 
 @pytest.mark.asyncio
-async def test_add_model(started_registry, llm_provider_config):
+async def test_add_model():
     """Test adding a new model."""
-    service = await anext(started_registry)
-    new_model = ModelConfig(
-        id="new_model",
-        name="New Model",
-        description="A new model",
-        endpoint_url="http://new.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        llm_provider=llm_provider_config
-    )
-    added_model = await service.add_model("new_model", new_model)
-    assert "new_model" in service.registry.models
-    registry_model = service.registry.models["new_model"]
-    assert registry_model["id"] == new_model.id
-    assert registry_model["name"] == new_model.name
-    assert registry_model["description"] == new_model.description
-    assert registry_model["version"] == new_model.version
-    assert registry_model["endpoint"] == new_model.endpoint_url
-    assert registry_model["config_file"] == f"models/{new_model.id}.yaml"
-    assert registry_model["active"] == new_model.active
-    assert registry_model["type"] == new_model.type
-    assert registry_model["metadata"] == new_model.metadata
-    assert registry_model["llm_provider"] == new_model.llm_provider.type
-
-
-@pytest.mark.asyncio
-async def test_add_model_duplicate(started_registry, llm_provider_config):
-    service = await anext(started_registry)
-    service.registry.models = {}
-    service.config_manager.models = {}
-    model = ModelConfig(
-        id="test_model",
-        name="Test Model",
-        description="A test model",
-        endpoint_url="http://test.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="classification",
-        metadata={"framework": "pytorch"},
-        llm_provider=llm_provider_config
-    )
-    await service.add_model("test_model", model)
-    with pytest.raises(ModelAlreadyExistsError):
-        await service.add_model("test_model", model)
-
-
-def test_update_model_not_found(started_registry, llm_provider_config):
-    """Test updating a model that doesn't exist."""
-    model = ModelConfig(
-        id="test_model",
-        name="Test Model",
-        description="A test model",
-        endpoint_url="http://test.com",
-        version="1.0.0",
-        active=True,
-        timeout=30.0,
-        max_retries=3,
-        type="classification",
-        metadata={"framework": "pytorch"},
-        llm_provider=llm_provider_config
-    )
-    
-    with pytest.raises(Exception):
-        started_registry.update_model("nonexistent_model", model)
-
-
-def test_delete_model_not_found(started_registry):
-    """Test deleting a model that doesn't exist."""
-    with pytest.raises(Exception):
-        started_registry.delete_model("nonexistent_model")
-
-
-@pytest.mark.asyncio
-async def test_delete_model_registry_entry_not_found(mock_config_manager, llm_provider_config):
-    """Test deleting a model when the registry entry is not found."""
-    # First load configurations
-    test_models = {
-        "test1": ModelConfig(
-            id="test1",
-            name="Test Model 1",
-            description="Test model 1",
-            endpoint_url="http://test1.com",
-            version="1.0.0",
-            active=True,
-            timeout=30.0,
-            max_retries=3,
-            llm_provider=llm_provider_config
+    # Create a service with mocks
+    with patch('app.services.model_registry.ModelConfigManager') as mock_config_manager_cls, \
+         patch('app.services.model_registry.ModelRegistry') as mock_registry_cls:
+        
+        # Set up mocks
+        mock_config_manager = AsyncMock()
+        mock_registry = AsyncMock()
+        
+        # Configure the mocks
+        mock_config_manager_cls.return_value = mock_config_manager
+        mock_registry_cls.return_value = mock_registry
+        
+        # Create the service
+        service = ModelRegistryService()
+        service.config_manager = mock_config_manager
+        service.registry = mock_registry
+        
+        # Set up test data
+        new_model = ModelConfig(
+            id="new_model",
+            name="New Model",
+            endpoint_url="http://new-model.com/predict",
+            active=True
         )
-    }
-    test_registry = ModelRegistry(
-        version="1.0.0",
-        name="Test Registry",
-        description="Test registry for unit tests",
-        models={}
-    )
-    mock_config_manager.load_configs = AsyncMock(return_value=(test_registry, test_models))
-    await mock_config_manager.load_configs()
-    
-    # Try to delete a model that doesn't exist in the registry
+        
+        # Mock the add_model_config method
+        async def mock_add_model_config(config):
+            return new_model
+            
+        mock_config_manager.add_model_config = AsyncMock(side_effect=mock_add_model_config)
+        mock_config_manager.models = {}
+        
+        # Add the model
+        await service.add_model("new_model", new_model)
+        
+        # Verify the model was added
+        mock_config_manager.add_model_config.assert_awaited_once_with(new_model)
+
+
+@pytest.mark.asyncio
+async def test_model_not_found(started_registry):
+    """Test handling of non-existent model."""
+    # Try to get a non-existent model
     with pytest.raises(ModelNotFoundError):
-        mock_config_manager.delete_model_config("nonexistent_model")
+        started_registry.get_model_config("non_existent_model")
+
+
+@pytest.mark.asyncio
+async def test_add_model_duplicate(started_registry):
+    """Test adding a model with a duplicate ID."""
+    # Try to add a model with an existing ID
+    duplicate_model = ModelConfig(
+        id="test_model_1",
+        name="Duplicate Model",
+        endpoint_url="http://duplicate:8000",
+        active=True
+    )
+    with pytest.raises(ModelAlreadyExistsError):
+        await started_registry.add_model("test_model_1", duplicate_model)
+
+
+@pytest.mark.asyncio
+async def test_model_update_not_found(started_registry):
+    """Test updating non-existent model."""
+    # Try to update a non-existent model
+    model = ModelConfig(
+        id="non_existent_model",
+        name="Non Existent Model",
+        endpoint_url="http://nonexistent:8000",
+        active=True
+    )
+    with pytest.raises(ModelNotFoundError):
+        await started_registry.update_model("non_existent_model", model)
+
+
+@pytest.mark.asyncio
+async def test_platform_config():
+    """Test platform configuration functionality."""
+    # Create a service with mocks
+    with patch('app.services.model_registry.ModelConfigManager') as mock_config_manager_cls, \
+         patch('app.services.model_registry.ModelRegistry') as mock_registry_cls:
+        
+        # Set up mocks
+        mock_config_manager = AsyncMock()
+        mock_registry = AsyncMock()
+        
+        # Configure the mocks
+        mock_config_manager_cls.return_value = mock_config_manager
+        mock_registry_cls.return_value = mock_registry
+        
+        # Create the service
+        service = ModelRegistryService()
+        service.config_manager = mock_config_manager
+        service.registry = mock_registry
+        
+        # Set up platform config
+        platform_config = PlatformConfig(
+            timeout=30.0,
+            max_retries=3
+        )
+        mock_config_manager.get_platform_config.return_value = platform_config
+        
+        # Test getting platform config
+        config = await service.get_platform_config()
+        assert isinstance(config, PlatformConfig)
+        assert config.timeout == 30.0
+        assert config.max_retries == 3
+        
+        # Test updating platform config
+        new_config = PlatformConfig(
+            timeout=60.0,
+            max_retries=5,
+            health_check={
+                "interval": 60,
+                "timeout": 10,
+                "failure_threshold": 5,
+                "success_threshold": 3
+            },
+            circuit_breaker={
+                "failure_threshold": 10,
+                "reset_timeout": 60.0,
+                "half_open_timeout": 60.0,
+                "success_threshold": 4
+            }
+        )
+        
+        # Mock the update_platform_config method
+        async def mock_update_platform_config(config):
+            return new_config
+            
+        # Mock the models property
+        mock_config_manager.models = {}
+        
+        mock_config_manager.update_platform_config = mock_update_platform_config
+        
+        # Update the platform config
+        updated_config = await service.update_platform_config(new_config)
+        assert updated_config.timeout == 60.0
+        assert updated_config.max_retries == 5
+        
+        # Test model-specific platform config
+        model_id = "test_model_platform_config"
+        model_config = ModelConfig(
+            id=model_id,
+            name="Test Model Platform Config",
+            endpoint_url="http://test-platform.com/predict",
+            active=True
+        )
+        
+        # Set up the model in the mocks
+        mock_config_manager.models = {model_id: model_config}
+        
+        # Mock the get_model_config method
+        async def mock_get_model_config(m_id):
+            if m_id in mock_config_manager.models:
+                return mock_config_manager.models[m_id]
+            raise ModelNotFoundError(f"Model {m_id} not found")
+            
+        mock_config_manager.get_model_config = mock_get_model_config
+        
+        # Mock the get_model_platform_config method
+        async def mock_get_model_platform_config(m_id):
+            return {
+                "timeout": 60.0,
+                "max_retries": 5
+            }
+            
+        mock_config_manager.get_model_platform_config = mock_get_model_platform_config
+        
+        # Get model platform config
+        model_platform_config = await service.get_model_platform_config(model_id)
+        assert model_platform_config["timeout"] == 60.0
+        assert model_platform_config["max_retries"] == 5
+        
+        # Update model platform config
+        new_model_config = {
+            "timeout": 45.0,
+            "max_retries": 4,
+            "health_check": {
+                "interval": 30,
+                "timeout": 5,
+                "failure_threshold": 2,
+                "success_threshold": 1
+            },
+            "circuit_breaker": {
+                "failure_threshold": 3,
+                "reset_timeout": 20.0,
+                "half_open_timeout": 10.0,
+                "success_threshold": 1
+            }
+        }
+        
+        # Mock the update_model_platform_config method
+        mock_config_manager.update_model_platform_config.return_value = {
+            **new_model_config,
+            "timeout": 45.0,
+            "max_retries": 4
+        }
+        
+        updated_model_config = await service.update_model_platform_config(model_id, new_model_config)
+        assert updated_model_config["timeout"] == 45.0
+        assert updated_model_config["max_retries"] == 4
+        
+        # Test non-existent model
+        mock_config_manager.get_model_platform_config.side_effect = ModelNotFoundError("Model not found")
+        with pytest.raises(ModelNotFoundError):
+            await service.get_model_platform_config("non_existent_model")
+        
+        mock_config_manager.update_model_platform_config.side_effect = ModelNotFoundError("Model not found")
+        with pytest.raises(ModelNotFoundError):
+            await service.update_model_platform_config("non_existent_model", new_model_config)

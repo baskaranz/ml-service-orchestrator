@@ -1,0 +1,19 @@
+id: mock-model-2
+name: "Local Mock Model 2 (Inactive)"
+description: "An inactive mock model for local testing"
+endpoint_url: "http://localhost:8081/v1/predict"
+active: false  # This model is intentionally inactive
+platform:
+  timeout: 60
+  max_retries: 2
+  circuit_breaker:
+    failure_threshold: 3
+    reset_timeout: 120
+    half_open_timeout: 60
+    success_threshold: 3
+metadata:
+  owner: "local-dev"
+  version: "1.0.0"
+  tags: ["local", "mock", "testing", "inactive"]
+  created_at: "2025-05-01T00:00:00Z"
+  updated_at: "2025-05-01T00:00:00Z"

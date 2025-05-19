@@ -30,14 +30,12 @@ This will build and start the orchestrator container on port 8000.
 You can create and start any number of mock models with custom names and ports. For example:
 
 ```bash
-# Start a mock model named my-custom-model on port 9001
-./scripts/start_mock_model.sh my-custom-model 9001
+# Start a mock model with a custom name and port
+./scripts/mocks/start_mock_model.sh my-custom-model 9001
 
-# Start mock-model-1 on port 8001
-./scripts/start_mock_model.sh mock-model-1 8001
-
-# Start mock-model-2 on port 8002
-./scripts/start_mock_model.sh mock-model-2 8002
+# Start multiple mock models
+./scripts/mocks/start_mock_model.sh mock-model-1 8001
+./scripts/mocks/start_mock_model.sh mock-model-2 8002
 ```
 
 Each command will create a model config and start a Docker container for that model.

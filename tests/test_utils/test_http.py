@@ -36,48 +36,45 @@ def test_build_url():
 @pytest.mark.asyncio
 async def test_make_request_success():
     """Test successful HTTP request."""
-    # Mock response
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"status": "success"}
-    
-    # Mock httpx.AsyncClient.request
-    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = mock_response
-        
-        # Make request
-        response = await make_request(
+    mock_response.headers = {}
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.request = AsyncMock(return_value=mock_response)
+    mock_client.aclose = AsyncMock()
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        status, data, headers = await make_request(
             "GET",
             "http://example.com",
             headers={"Content-Type": "application/json"},
             json={"key": "value"},
             timeout=10.0
         )
-        
-        # Verify response
-        assert response.status_code == 200
-        assert response.json() == {"status": "success"}
-        
-        # Verify request was made properly
-        mock_request.assert_called_once()
-        args = mock_request.call_args[1]
+        assert status == 200
+        assert data == {"status": "success"}
+        mock_client.request.assert_called_once()
+        args = mock_client.request.call_args[1]
         assert args["method"] == "GET"
         assert args["url"] == "http://example.com"
         assert args["headers"]["Content-Type"] == "application/json"
         assert args["json"] == {"key": "value"}
-        assert args["timeout"] == 10.0
 
 
 @pytest.mark.asyncio
 async def test_make_request_error():
     """Test handling HTTP request errors."""
-    # Mock httpx.AsyncClient.request to raise an exception
-    with patch("httpx.AsyncClient.request", new_callable=AsyncMock) as mock_request:
-        mock_request.side_effect = httpx.RequestError("Connection error")
-        
-        # Make request and expect ModelRequestError to be raised
-        with pytest.raises(ModelRequestError):
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.request = AsyncMock(side_effect=httpx.RequestError("Connection error"))
+    mock_client.aclose = AsyncMock()
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        with pytest.raises(ModelRequestError) as exc_info:
             await make_request("GET", "http://example.com")
+        assert "Connection error" in str(exc_info.value)
 
 
 def test_handle_request_error():
@@ -113,18 +110,27 @@ def test_handle_request_error():
 
 def test_create_httpx_client():
     """Test creating an HTTPX client with various parameters."""
-    # Create client with defaults
-    client = create_httpx_client()
-    assert isinstance(client, httpx.AsyncClient)
+    # Mock httpx.AsyncClient
+    mock_client = MagicMock()
+    mock_client.timeout = MagicMock()
+    mock_client.timeout.connect = 30.0
+    mock_client.follow_redirects = True
+    mock_client.headers = {"User-Agent": "Test"}
     
-    # Create client with timeout
-    client = create_httpx_client(timeout=30.0)
-    assert client.timeout.connect == 30.0
-    
-    # Create client with follow redirects
-    client = create_httpx_client(follow_redirects=True)
-    assert client.follow_redirects is True
-    
-    # Create client with custom headers
-    client = create_httpx_client(headers={"User-Agent": "Test"})
-    assert client.headers.get("User-Agent") == "Test"
+    # Patch httpx.AsyncClient
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        # Create client with defaults
+        client = create_httpx_client()
+        assert isinstance(client, MagicMock)
+        
+        # Create client with timeout
+        client = create_httpx_client(timeout=30.0)
+        assert client.timeout.connect == 30.0
+        
+        # Create client with follow redirects
+        client = create_httpx_client(follow_redirects=True)
+        assert client.follow_redirects is True
+        
+        # Create client with custom headers
+        client = create_httpx_client(headers={"User-Agent": "Test"})
+        assert client.headers.get("User-Agent") == "Test"

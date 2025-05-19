@@ -11,6 +11,9 @@ import os
 class BaseAppSettings(BaseSettings):
     """Base application settings with common configuration."""
     
+    # Base directory
+    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    
     # Application settings
     APP_NAME: str = Field(default="ML Orchestrator")
     APP_VERSION: str = Field(default="1.0.0")
@@ -25,6 +28,11 @@ class BaseAppSettings(BaseSettings):
     CONFIG_DIR: str = Field(default="config")
     MODELS_DIR: str = Field(default="config/models")
     
+    @property
+    def models_dir_path(self) -> Path:
+        """Get the absolute path to the models directory."""
+        return (Path.cwd() / self.MODELS_DIR).resolve()
+    
     # Default service settings
     DEFAULT_TIMEOUT: float = Field(default=30.0)
     DEFAULT_MAX_RETRIES: int = Field(default=3)
@@ -36,9 +44,6 @@ class BaseAppSettings(BaseSettings):
     # Admin API settings
     ADMIN_API_ENABLED: bool = Field(default=True)
     ADMIN_API_KEY: Optional[str] = Field(default=None)
-    
-    # Metrics settings
-    METRICS_ENABLED: bool = Field(default=False)
     
     # Logging
     LOG_LEVEL: str = Field(default="INFO")

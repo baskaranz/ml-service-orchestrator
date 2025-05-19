@@ -41,12 +41,25 @@ async def list_models(
     Returns:
         List of model summaries
     """
-    models = model_registry.list_models()
-    
-    return ModelListResponse(
-        models=models,
-        count=len(models)
-    )
+    try:
+        models = model_registry.list_models()
+        return ModelListResponse(
+            models=[
+                {
+                    "id": model.id,
+                    "name": model.name,
+                    "endpoint_url": model.endpoint_url,
+                    "active": model.active
+                }
+                for model in models
+            ],
+            count=len(models)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
 
 @router.get(

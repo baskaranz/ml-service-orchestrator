@@ -12,7 +12,6 @@ import logging
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import Counter, Histogram, start_http_server, CollectorRegistry
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routers import api_router
@@ -25,40 +24,6 @@ from app.api.routers.orchestrator import _orchestrator
 logging.basicConfig(level=logging.DEBUG)
 
 logger = get_logger(__name__)
-
-
-class MetricsMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware for collecting request metrics.
-    """
-    
-    def __init__(self, app, request_count, request_time):
-        super().__init__(app)
-        self.request_count = request_count
-        self.request_time = request_time
-    
-    async def dispatch(self, request: Request, call_next) -> Response:
-        # Start timer
-        start_time = time.time()
-        
-        # Process request
-        response = await call_next(request)
-        
-        # Record metrics
-        duration = time.time() - start_time
-        status_code = response.status_code
-        
-        # Extract path pattern from router if possible
-        path = request.url.path
-        
-        # Record request count by path, method, and status
-        self.request_count.labels(path=path, method=request.method, status=status_code).inc()
-        
-        # Record request time
-        self.request_time.labels(path=path, method=request.method).observe(duration)
-        
-        return response
-
 
 def create_app() -> FastAPI:
     """
@@ -73,34 +38,12 @@ def create_app() -> FastAPI:
     # Set up logging with DEBUG level
     setup_logging(level=logging.DEBUG)
     
-    # Create a new registry for metrics to avoid duplicates
-    registry = CollectorRegistry()
-    
-    # Metrics
-    request_count = Counter(
-        "orchestrator_request_count", 
-        "Total count of requests by path and method",
-        ["path", "method", "status"],
-        registry=registry
-    )
-
-    request_time = Histogram(
-        "orchestrator_request_processing_seconds",
-        "Time spent processing requests",
-        ["path", "method"],
-        registry=registry
-    )
-    
     from app.services.model_registry import ModelRegistryService
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         print("Lifespan context manager - startup", file=sys.stderr)
         logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-        # Start metrics server if enabled
-        if settings.METRICS_ENABLED:
-            start_http_server(9090, registry=registry)
-            logger.info("Metrics server started on port 9090")
         # Set up model registry service
         model_registry_service = ModelRegistryService()
         # Create config manager for registry if needed
@@ -109,8 +52,79 @@ def create_app() -> FastAPI:
                 settings.MODELS_DIR
             )
         await model_registry_service.startup()
-        # Initialize orchestrator error handlers
+        # Initialize orchestrator with correct config path
+        # Use the correct path where models are actually located
+        models_dir = settings.BASE_DIR / "config" / "local" / "models"
+        logger.info(f"Using models directory: {models_dir}")
+        
+        # Update the settings to point to the correct models directory
+        settings.MODELS_DIR = models_dir
+        
+        # Debug: List all files in the models directory
+        try:
+            import os
+            logger.info(f"Contents of {models_dir}:")
+            if models_dir.exists():
+                for f in models_dir.glob('**/*'):
+                    logger.info(f"  - {f.relative_to(models_dir)}")
+            else:
+                logger.error(f"Models directory does not exist: {models_dir}")
+        except Exception as e:
+            logger.error(f"Error listing models directory: {e}")
+        
+        # Initialize the orchestrator
+        try:
+            from app.api.routers.orchestrator import get_orchestrator
+            from app.config.models_config import ModelConfigManager
+            from pathlib import Path
+            
+            # Initialize the orchestrator
+            logger.info("Initializing orchestrator...")
+            global _orchestrator
+            _orchestrator = await get_orchestrator()
+            
+            # Initialize the ModelConfigManager with the config directory
+            config_manager = ModelConfigManager(config_dir=str(settings.BASE_DIR / "config"))
+            
+            # Load configurations
+            _, loaded_models = await config_manager.load_configs()
+            
+            if loaded_models:
+                logger.info(f"Successfully loaded {len(loaded_models)} models from configuration")
+                
+                # Convert loaded models to ModelConfig objects and add to orchestrator
+                for model_id, model_config in loaded_models.items():
+                    # Ensure the model is active
+                    if not hasattr(model_config, 'active') or model_config.active:
+                        _orchestrator._models[model_id] = model_config
+                        logger.info(f"Added model to orchestrator: {model_id} (active: {getattr(model_config, 'active', True)})")
+                    else:
+                        logger.info(f"Skipping inactive model: {model_id}")
+                
+                logger.info(f"Total models loaded into orchestrator: {len(_orchestrator._models)}")
+            else:
+                logger.warning("No models found in configuration")
+                
+        except Exception as e:
+            logger.error(f"Error loading models from config: {str(e)}")
+            logger.exception("Detailed error:")
+        
+        # Log all loaded models
+        if _orchestrator._models:
+            logger.info(f"Successfully loaded {len(_orchestrator._models)} active models: {list(_orchestrator._models.keys())}")
+            for model_id, model in _orchestrator._models.items():
+                logger.info(f"  - Model: {model_id}")
+                logger.info(f"    Active: {getattr(model, 'active', False)}")
+                logger.info(f"    Endpoint: {getattr(model, 'endpoint_url', 'N/A')}")
+        else:
+            logger.error("No models were loaded into the orchestrator. Check configuration files and logs for errors.")
+        
+        # Verify models are properly set
+        logger.info(f"Final _orchestrator._models: {_orchestrator._models}")
+        
+        # Initialize error handlers
         await _orchestrator.initialize_error_handlers()
+        logger.info("Orchestrator initialization complete")
         try:
             yield
         finally:
@@ -138,27 +152,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Add metrics middleware if enabled
-    if settings.METRICS_ENABLED:
-        app.add_middleware(MetricsMiddleware, request_count=request_count, request_time=request_time)
-    
     # Set up exception handlers
     setup_exception_handlers(app)
     
     # Include API routes
     app.include_router(api_router)
     
-    # Add root path handler
-    @app.get("/", tags=["root"])
-    async def root() -> Dict[str, str]:
-        """Root path handler."""
-        return {
-            "name": settings.APP_NAME,
-            "version": settings.APP_VERSION,
-            "status": "running"
-        }
-    
-    print("Application created successfully", file=sys.stderr)
     return app
 
 

@@ -40,20 +40,44 @@ class ProxyService:
     
     def _get_client(self, model_config: ModelConfig) -> HttpClient:
         """
-        Get or create an HTTP client for a model.
+        Get or create an HTTP client for a model with connection pooling.
         
         Args:
-            model_config: Model configuration
+            model_config: Model configuration containing connection settings
             
         Returns:
-            HTTP client instance
+            Configured HttpClient instance with connection pooling
+            
+        Raises:
+            ValueError: If model configuration is invalid
         """
+        if not model_config.id:
+            raise ValueError("Model configuration must have an ID")
+            
         if model_config.id not in self._clients:
-            client = HttpClient(
+            # Create a new HTTP client with connection pooling settings
+            self._clients[model_config.id] = HttpClient(
                 timeout=model_config.timeout,
-                max_retries=model_config.max_retries
+                max_retries=model_config.max_retries,
+                retry_delay=1.0,  # Default retry delay
+                max_retry_delay=30.0,  # Default max retry delay
+                backoff_factor=2.0,  # Default backoff factor
+                auth_config=model_config.auth if hasattr(model_config, 'auth') else None,
+                pool_connections=model_config.pool_connections,
+                pool_maxsize=model_config.pool_maxsize,
+                max_keepalive_connections=model_config.max_keepalive_connections,
+                keepalive_expiry=model_config.keepalive_timeout,
+                http2=model_config.http2 if hasattr(model_config, 'http2') else False
             )
-            self._clients[model_config.id] = client
+            
+            logger.debug(
+                f"Created HTTP client for model {model_config.id} with settings: "
+                f"pool_connections={model_config.pool_connections}, "
+                f"pool_maxsize={model_config.pool_maxsize}, "
+                f"max_keepalive_connections={model_config.max_keepalive_connections}, "
+                f"keepalive_timeout={model_config.keepalive_timeout}, "
+                f"http2={getattr(model_config, 'http2', False)}"
+            )
             
         return self._clients[model_config.id]
     
@@ -90,7 +114,8 @@ class ProxyService:
                 method="POST",
                 url=model_config.endpoint_url,
                 headers=all_headers,
-                json_data=request_data,
+                json=request_data,
+                content=None,
                 params=None
             )
             

@@ -3,8 +3,9 @@ Service for model registry operations.
 """
 
 import logging
+import os
 import asyncio
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import unittest.mock
@@ -26,22 +27,25 @@ class ModelRegistryService:
     
     _instance = None
     
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, env: str = None):
         if self._initialized:
             return
             
         self.registry = ModelRegistry(
-            version="1.0.0",
             name="Model Registry",
-            description="Fallback: registry of model configurations"
+            description=f"Registry of model configurations ({env or 'default'})"
         )
-        self.config_manager = ModelConfigManager(config_dir="config/models")
+        # Initialize with the base config directory - ModelConfigManager will handle environment-specific paths
+        self.config_manager = ModelConfigManager(
+            config_dir="config",  # Simplified path
+            env=env
+        )
         self._initialized = True
         self._watch_task = None
     
@@ -56,7 +60,6 @@ class ModelRegistryService:
             logger.error(f"Failed to initialize model registry: {str(e)}")
             # Initialize with empty registry rather than failing
             self.registry = ModelRegistry(
-                version="1.0.0",
                 name="Model Registry",
                 description="Fallback: registry of model configurations"
             )
@@ -71,7 +74,6 @@ class ModelRegistryService:
             except asyncio.CancelledError:
                 pass
         self.registry = ModelRegistry(
-            version="1.0.0",
             name="Model Registry",
             description="Fallback: registry of model configurations"
         )
@@ -105,12 +107,13 @@ class ModelRegistryService:
         try:
             registry, configs = await self.config_manager.load_configs()
             self.registry = registry
+            # Update the registry's models dictionary with the loaded configs
+            self.registry.models = configs
             return registry, configs
         except Exception as e:
             logger.error(f"Failed to reload configurations: {str(e)}")
             # Create fallback registry with minimal information
             fallback_registry = ModelRegistry(
-                version="1.0.0",
                 name="Model Registry",
                 description="Fallback: registry of model configurations"
             )
@@ -128,135 +131,235 @@ class ModelRegistryService:
         """Alias for get_model, for compatibility with tests and legacy code."""
         return self.get_model(model_id)
     
-    def list_models(self) -> List[ModelSummary]:
+    def list_models(self) -> List[ModelConfig]:
         """List all registered models."""
-        models = []
-        for model_id, model_config in self.config_manager.models.items():
-            try:
-                summary = ModelSummary(
-                    id=model_id,
-                    name=model_config.name,
-                    description=model_config.description,
-                    version=model_config.version,
-                    active=model_config.active,
-                    type=model_config.type,
-                    metadata=model_config.metadata
-                )
-                models.append(summary)
-            except Exception as e:
-                logger.error(f"Error creating summary for model {model_id}: {str(e)}")
-                continue
-                
-        return models
+        # Return models from config manager, falling back to registry if needed
+        if hasattr(self.config_manager, 'models') and self.config_manager.models:
+            return list(self.config_manager.models.values())
+        return list(self.registry.models.values())
 
     async def add_model(self, model_id: str, model_config: ModelConfig) -> ModelConfig:
-        """Add a new model configuration."""
+        """Add a new model to the registry."""
         if model_id in self.config_manager.models:
             raise ModelAlreadyExistsError(f"Model {model_id} already exists")
-        # Ensure registry exists
-        if self.config_manager.registry is None:
-            self.config_manager.registry = ModelRegistry(
-                version="1.0.0",
-                name="Test Registry",
-                description="Test registry for unit tests",
-                models={}
-            )
-            self.registry = self.config_manager.registry
-        try:
-            self.config_manager.add_model_config(model_config)
-        except Exception as e:
-            # For test compatibility: if HTTPException 409, raise ValueError
-            if isinstance(e, HTTPException) and getattr(e, 'status_code', None) == 409:
-                raise ValueError(str(e))
-            raise
-        # If add_model_config is mocked, manually update dicts for test compatibility
-        if isinstance(self.config_manager.add_model_config, unittest.mock.MagicMock):
+
+        # Add to config manager
+        if hasattr(self.config_manager, 'add_model_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.add_model_config):
+                await self.config_manager.add_model_config(model_config)
+            else:
+                self.config_manager.add_model_config(model_config)
+        else:
+            # Fallback to direct assignment if add_model_config doesn't exist
             self.config_manager.models[model_id] = model_config
-            if self.config_manager.registry:
-                self.config_manager.registry.models[model_id] = {
-                    "id": model_config.id,
-                    "name": model_config.name,
-                    "description": model_config.description,
-                    "version": model_config.version,
-                    "endpoint": model_config.endpoint_url,
-                    "config_file": f"models/{model_config.id}.yaml",
-                    "active": model_config.active,
-                    "type": model_config.type,
-                    "metadata": model_config.metadata,
-                    "llm_provider": model_config.llm_provider.type if model_config.llm_provider else None
-                }
-        # Keep self.registry.models in sync
-        if self.config_manager.registry:
-            self.registry.models = dict(self.config_manager.registry.models)
+
+        # Add to registry
+        self.registry.models[model_id] = model_config
+
         return model_config
 
     async def update_model(self, model_id: str, model_config: ModelConfig) -> ModelConfig:
         """Update an existing model configuration."""
-        # Ensure registry exists
-        if self.config_manager.registry is None:
-            self.config_manager.registry = ModelRegistry(
-                version="1.0.0",
-                name="Test Registry",
-                description="Test registry for unit tests",
-                models={}
-            )
-            self.registry = self.config_manager.registry
-        if model_id not in self.config_manager.registry.models:
+        if model_id not in self.config_manager.models:
             raise ModelNotFoundError(f"Model {model_id} not found")
-        if model_id != model_config.id:
-            raise ValueError("Model ID mismatch")
-        self.config_manager.update_model_config(model_id, model_config)
-        # If update_model_config is mocked, manually update dicts for test compatibility
-        if isinstance(self.config_manager.update_model_config, unittest.mock.MagicMock):
+
+        # Update in config manager
+        if hasattr(self.config_manager, 'update_model_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.update_model_config):
+                await self.config_manager.update_model_config(model_id, model_config)
+            else:
+                self.config_manager.update_model_config(model_id, model_config)
+        else:
+            # Fallback to direct update if update_model_config doesn't exist
             self.config_manager.models[model_id] = model_config
-            if self.config_manager.registry:
-                self.config_manager.registry.models[model_id] = {
-                    "id": model_config.id,
-                    "name": model_config.name,
-                    "description": model_config.description,
-                    "version": model_config.version,
-                    "endpoint": model_config.endpoint_url,
-                    "config_file": f"models/{model_config.id}.yaml",
-                    "active": model_config.active,
-                    "type": model_config.type,
-                    "metadata": model_config.metadata,
-                    "llm_provider": model_config.llm_provider.type if model_config.llm_provider else None
-                }
-        # Keep self.registry.models in sync
-        if self.config_manager.registry:
-            self.registry.models = dict(self.config_manager.registry.models)
+
+        # Update in registry
+        self.registry.models[model_id] = model_config
+
         return model_config
 
     async def delete_model(self, model_id: str) -> None:
         """Delete a model configuration."""
-        # Ensure registry exists
-        if self.config_manager.registry is None:
-            self.config_manager.registry = ModelRegistry(
-                version="1.0.0",
-                name="Test Registry",
-                description="Test registry for unit tests",
-                models={}
-            )
-            self.registry = self.config_manager.registry
-        if model_id not in self.config_manager.registry.models:
+        if model_id not in self.config_manager.models:
             raise ModelNotFoundError(f"Model {model_id} not found")
-        self.config_manager.delete_model_config(model_id)
-        # If delete_model_config is mocked, manually update dicts for test compatibility
-        if isinstance(self.config_manager.delete_model_config, unittest.mock.MagicMock):
-            self.config_manager.models.pop(model_id, None)
-            if self.config_manager.registry:
-                self.config_manager.registry.models.pop(model_id, None)
-        # Keep self.registry.models in sync
-        if self.config_manager.registry:
-            self.registry.models = dict(self.config_manager.registry.models)
+
+        # Delete from config manager
+        if hasattr(self.config_manager, 'delete_model_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.delete_model_config):
+                await self.config_manager.delete_model_config(model_id)
+            else:
+                self.config_manager.delete_model_config(model_id)
+        else:
+            # Fallback to direct deletion if delete_model_config doesn't exist
+            if model_id in self.config_manager.models:
+                del self.config_manager.models[model_id]
+
+        # Delete from registry
+        if model_id in self.registry.models:
+            del self.registry.models[model_id]
+
+    async def activate_model(self, model_id: str) -> None:
+        """Activate a model."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        
+        model = self.config_manager.models[model_id]
+        model.active = True
+        
+        # Update in registry
+        if model_id in self.registry.models:
+            self.registry.models[model_id].active = True
+            
+        # Persist the change
+        await self.update_model(model_id, model)
+
+    async def deactivate_model(self, model_id: str) -> None:
+        """Deactivate a model."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        
+        model = self.config_manager.models[model_id]
+        model.active = False
+        
+        # Update in registry
+        if model_id in self.registry.models:
+            self.registry.models[model_id].active = False
+            
+        # Persist the change
+        await self.update_model(model_id, model)
 
     async def register_model(self, model_id: str, model_config: ModelConfig) -> ModelConfig:
         """Manually register a model configuration."""
         return await self.add_model(model_id, model_config)
 
+
+    def get_model_endpoint(self, model_id: str) -> str:
+        """Get the endpoint URL for a specific model."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        return self.config_manager.models[model_id].endpoint_url
+
+    def get_model_config_dict(self, model_id: str) -> Dict[str, Any]:
+        """Get the full configuration for a specific model as a dictionary."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        return self.config_manager.models[model_id].model_dump()
+        
+    def get_model_timeout(self, model_id: str) -> float:
+        """Get the request timeout for a specific model."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        return self.config_manager.models[model_id].timeout
+        
+    def get_model_retries(self, model_id: str) -> int:
+        """Get the maximum number of retries for a specific model."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        return self.config_manager.models[model_id].max_retries
+        
+    def get_model_headers(self, model_id: str) -> Dict[str, str]:
+        """Get the headers for a specific model."""
+        if model_id not in self.config_manager.models:
+            raise ModelNotFoundError(f"Model {model_id} not found")
+        return self.config_manager.models[model_id].headers or {}
+        
+    async def get_platform_config(self) -> PlatformConfig:
+        """Get the platform configuration.
+        
+        Returns:
+            PlatformConfig: The current platform configuration
+        """
+        if hasattr(self.config_manager, 'get_platform_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.get_platform_config):
+                return await self.config_manager.get_platform_config()
+            return self.config_manager.get_platform_config()
+        return PlatformConfig()
+        
+    async def update_platform_config(self, config: PlatformConfig) -> PlatformConfig:
+        """Update the platform configuration.
+        
+        Args:
+            config: The new platform configuration
+            
+        Returns:
+            PlatformConfig: The updated platform configuration
+        """
+        if hasattr(self.config_manager, 'update_platform_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.update_platform_config):
+                return await self.config_manager.update_platform_config(config)
+            return self.config_manager.update_platform_config(config)
+        return config
+        
+    async def get_model_platform_config(self, model_id: str) -> Dict[str, Any]:
+        """Get the platform configuration for a specific model.
+        
+        Args:
+            model_id: The ID of the model
+            
+        Returns:
+            Dict[str, Any]: The platform configuration for the model
+            
+        Raises:
+            ModelNotFoundError: If the model is not found
+        """
+        # First get the model to ensure it exists
+        model = self.get_model(model_id)
+        
+        # Get the platform config from the config manager if available
+        if hasattr(self.config_manager, 'get_model_platform_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.get_model_platform_config):
+                return await self.config_manager.get_model_platform_config(model_id)
+            return self.config_manager.get_model_platform_config(model_id)
+            
+        # Fallback to model's platform config if available
+        if hasattr(model, 'platform') and model.platform is not None:
+            return model.platform.dict() if hasattr(model.platform, 'dict') else model.platform
+            
+        # Return empty dict if no platform config is available
+        return {}
+        
+    async def update_model_platform_config(self, model_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update the platform configuration for a specific model.
+        
+        Args:
+            model_id: The ID of the model to update
+            config: The new platform configuration
+            
+        Returns:
+            Dict[str, Any]: The updated platform configuration
+            
+        Raises:
+            ModelNotFoundError: If the model is not found
+        """
+        # First get the model to ensure it exists
+        model = self.get_model(model_id)
+        
+        # Update the platform config using the config manager if available
+        if hasattr(self.config_manager, 'update_model_platform_config'):
+            if asyncio.iscoroutinefunction(self.config_manager.update_model_platform_config):
+                return await self.config_manager.update_model_platform_config(model_id, config)
+            return self.config_manager.update_model_platform_config(model_id, config)
+            
+        # Fallback to updating the model's platform config directly
+        if not hasattr(model, 'platform') or model.platform is None:
+            model.platform = {}
+            
+        # Update the platform config
+        if isinstance(model.platform, dict):
+            model.platform.update(config)
+        elif hasattr(model.platform, 'update'):
+            model.platform.update(**config)
+            
+        return config
+
 def get_model_registry_service() -> ModelRegistryService:
-    """Get the model registry service instance."""
-    return ModelRegistryService()
+    """Get the model registry service instance.
+    
+    Returns:
+        ModelRegistryService: The model registry service instance
+    """
+    env = os.getenv("APP_ENV", "dev").lower()
+    return ModelRegistryService(env=env)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

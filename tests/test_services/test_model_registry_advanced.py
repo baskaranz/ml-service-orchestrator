@@ -6,6 +6,7 @@ import tempfile
 import shutil
 
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
@@ -15,7 +16,7 @@ from app.services.model_registry import ModelRegistryService, setup_model_regist
 from app.core.exceptions import ModelAlreadyExistsError
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def started_registry():
     """Create and start a model registry service with isolated config directory."""
     # Reset the singleton instance
@@ -28,7 +29,6 @@ async def started_registry():
     service.config_manager.config_dir = temp_dir
     # Mock load_configs to return empty registry and models
     empty_registry = ModelRegistry(
-        version="1.0.0",
         name="Test Registry",
         description="Test registry for advanced tests",
         models={}
@@ -77,25 +77,15 @@ async def test_startup_error_handling():
     await service.startup()
     
     # Verify that the service was initialized with a fallback registry
-    assert service.registry.version == "1.0.0"
     assert "fallback" in service.registry.description.lower()
 
 
 @pytest.mark.asyncio
 async def test_list_models_empty(started_registry):
     """Test listing models when no models exist."""
-    service = await anext(started_registry)
-    # Ensure models dict is empty and is a real dict
-    service.registry = ModelRegistry(
-        version="1.0.0",
-        name="Test Registry",
-        description="Test registry for advanced tests",
-        models={}
-    )
-    service.config_manager.models = {}
     # List models
-    models = service.list_models()
-    # Verify an empty list is returned
+    models = started_registry.list_models()
+    # Verify the list is empty
     assert isinstance(models, list)
     assert len(models) == 0
 
@@ -103,165 +93,113 @@ async def test_list_models_empty(started_registry):
 @pytest.mark.asyncio
 async def test_reload_configs_empty(started_registry):
     """Test reloading configs when no models are loaded."""
-    service = await anext(started_registry)
-    
-    # Mock the load_configs method to return empty registry and models
+    # Mock the config manager's load_configs method
     empty_registry = ModelRegistry(
-        version="1.0.0",
-        name="Test Registry",
-        description="Test registry for advanced tests",
+        name="Empty Registry",
+        description="Registry with no models",
         models={}
     )
     empty_models = {}
-    
-    service.config_manager.load_configs = AsyncMock(return_value=(empty_registry, empty_models))
+    started_registry.config_manager.load_configs = AsyncMock(return_value=(empty_registry, empty_models))
     
     # Reload configs
-    registry, models = await service.reload_configs()
+    await started_registry.reload_configs()
     
-    # Verify load_configs was called
-    service.config_manager.load_configs.assert_called_once()
+    # Verify the registry is empty
+    assert len(started_registry.registry.models) == 0
+    assert len(started_registry.config_manager.models) == 0
     
-    # Verify empty registry and models were returned
-    assert isinstance(registry, ModelRegistry)
-    assert len(registry.models) == 0
-    assert isinstance(models, dict)
-    assert len(models) == 0
+    # Verify the load_configs method was called
+    started_registry.config_manager.load_configs.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_list_models_with_transformations(started_registry, llm_provider_config):
     """Test listing models with transformations."""
-    service = await anext(started_registry)
-    # Clear existing models for isolation and ensure real dicts
-    service.registry = ModelRegistry(
-        version="1.0.0",
-        name="Test Registry",
-        description="Test registry for advanced tests",
-        models={}
-    )
-    service.config_manager.models = {}
     # Add a model with transformations
     model = ModelConfig(
         id="test_model",
         name="Test Model",
-        description="A test model",
         endpoint_url="http://test.com",
-        version="1.0.0",
         active=True,
-        timeout=30,
-        max_retries=3,
-        circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=5,
-            reset_timeout=30
-        ),
-        llm_provider=llm_provider_config
+        platform=PlatformConfig(
+            type="huggingface",
+            config=llm_provider_config
+        )
     )
-    service.config_manager.models["test_model"] = model
+    started_registry.config_manager.models["test_model"] = model
+    
     # List models
-    models = service.list_models()
-    # Verify the model was returned with correct fields
+    models = started_registry.list_models()
+    
+    # Verify the model was returned
     assert len(models) == 1
     assert models[0].id == "test_model"
     assert models[0].name == "Test Model"
-    assert models[0].description == "A test model"
-    assert models[0].version == "1.0.0"
     assert models[0].active is True
 
 
 @pytest.mark.asyncio
 async def test_add_model(started_registry, llm_provider_config):
     """Test adding a new model."""
-    service = await anext(started_registry)
-    # Create a new model
+    # Create a model
     model = ModelConfig(
-        id="new_model",
-        name="New Model",
-        description="A new model",
-        endpoint_url="http://new.com",
-        version="1.0.0",
-        active=True,
-        timeout=30,
-        max_retries=3,
-        circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=5,
-            reset_timeout=30
-        ),
-        llm_provider=llm_provider_config
+        id="test_model",
+        name="Test Model",
+        endpoint_url="http://test.com",
+        active=True
     )
     # Add the model
-    added_model = await service.add_model("new_model", model)
+    await started_registry.add_model("test_model", model)
     # Verify the model was added
-    assert added_model.id == "new_model"
-    assert "new_model" in service.config_manager.models
-    assert service.config_manager.models["new_model"].name == "New Model"
+    assert "test_model" in started_registry.config_manager.models
+    assert started_registry.config_manager.models["test_model"].name == "Test Model"
 
 
 @pytest.mark.asyncio
 async def test_add_model_already_exists(started_registry, llm_provider_config):
     """Test adding a model that already exists."""
-    service = await anext(started_registry)
     # Create a model
     model = ModelConfig(
         id="existing_model",
         name="Existing Model",
-        description="An existing model",
         endpoint_url="http://existing.com",
-        version="1.0.0",
-        active=True,
-        timeout=30,
-        max_retries=3,
-        circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=5,
-            reset_timeout=30
-        ),
-        llm_provider=llm_provider_config
+        active=True
     )
     # Add the model
-    service.config_manager.models["existing_model"] = model
-    service.registry.models["existing_model"] = model
+    started_registry.config_manager.models["existing_model"] = model
+    started_registry.registry.models["existing_model"] = model
     # Try to add it again
     with pytest.raises(ModelAlreadyExistsError):
-        await service.add_model("existing_model", model)
+        await started_registry.add_model("existing_model", model)
 
 
 @pytest.mark.asyncio
 async def test_get_model_not_found(started_registry):
     """Test getting a model that doesn't exist."""
-    service = await anext(started_registry)
-    
     # Try to get a non-existent model
     with pytest.raises(Exception):
-        service.get_model("nonexistent_model")
+        started_registry.get_model("nonexistent_model")
 
 
 @pytest.mark.asyncio
 async def test_get_model_found(started_registry, llm_provider_config):
     """Test getting a model that exists."""
-    service = await anext(started_registry)
     # Create a model
     model = ModelConfig(
         id="test_model",
         name="Test Model",
-        description="A test model",
         endpoint_url="http://test.com",
-        version="1.0.0",
-        active=True,
-        timeout=30,
-        max_retries=3,
-        circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=5,
-            reset_timeout=30
-        ),
-        llm_provider=llm_provider_config
+        active=True
     )
     # Add the model
-    service.config_manager.models["test_model"] = model
+    started_registry.config_manager.models["test_model"] = model
     # Get the model
-    retrieved_model = service.get_model("test_model")
+    retrieved_model = started_registry.get_model("test_model")
     # Verify the model was retrieved
     assert retrieved_model.id == "test_model"
     assert retrieved_model.name == "Test Model"
+    assert retrieved_model.active is True
 
 
 @pytest.mark.asyncio
@@ -272,22 +210,7 @@ async def test_setup_model_registry_with_app_context(app):
         id="test-model",
         name="Test Model",
         endpoint_url="http://example.com/model",
-        description="Test model for unit tests",
-        version="1.0.0",
-        timeout=30,
-        max_retries=3,
-        circuit_breaker=CircuitBreakerConfig(
-            failure_threshold=5,
-            reset_timeout=60,
-            exclude_exceptions=[]
-        ),
-        llm_provider=LLMProviderConfig(
-            type="test",
-            model_name="test-model",
-            api_key="test-key",
-            timeout=30,
-            max_retries=3
-        )
+        active=True
     )
     
     # Get the registry service

@@ -1,0 +1,33 @@
+id: model1
+name: "model1"
+description: "Mock model model1"
+endpoint_url: "http://host.docker.internal:8001/predict"
+active: true
+http2: false  # Disable HTTP/2
+
+# Request configuration
+timeout: 30.0
+max_retries: 3
+
+# Platform configuration
+platform:
+  timeout: 30.0
+  max_retries: 3
+  health_check:
+    enabled: true
+    interval: 30
+    timeout: 5
+    failure_threshold: 3
+    success_threshold: 2
+  circuit_breaker:
+    failure_threshold: 5
+    reset_timeout: 60.0
+    half_open_timeout: 30.0
+    success_threshold: 2
+
+# Metadata
+metadata:
+  owner: "local-dev"
+  version: "1.0.0"
+  tags: ["local", "mock"]
+  created_at: "2025-05-18T05:47:08Z"

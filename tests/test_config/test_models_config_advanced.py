@@ -2,6 +2,7 @@
 Advanced tests for model configuration management.
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -15,6 +16,9 @@ from pydantic import ValidationError
 from app.models.config_models import ModelConfig, ModelRegistry, CircuitBreakerConfig, LLMProviderConfig
 from app.config.models_config import ModelConfigManager
 from app.core.exceptions import ModelAlreadyExistsError, ModelNotFoundError
+
+# Configure logger for tests
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -33,11 +37,25 @@ def llm_provider_config() -> LLMProviderConfig:
 async def test_load_configs_directory_not_found():
     """Test loading configs when directory doesn't exist."""
     # Create a manager with a non-existent directory
-    manager = ModelConfigManager(config_dir="/tmp/nonexistent")
+    import tempfile
+    import shutil
     
-    # Try to load configurations and expect FileNotFoundError
-    with pytest.raises(FileNotFoundError):
-        await manager.load_configs()
+    # Create a temporary directory and then remove it to ensure it doesn't exist
+    temp_dir = tempfile.mkdtemp()
+    shutil.rmtree(temp_dir)
+    
+    manager = ModelConfigManager(config_dir=temp_dir)
+    
+    # The directory should be created and load_configs should not raise an error
+    try:
+        registry, models = await manager.load_configs()
+        assert isinstance(registry, ModelRegistry)
+        assert isinstance(models, dict)
+        assert len(models) == 0  # No models should be loaded
+    finally:
+        # Clean up
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.mark.asyncio
@@ -75,46 +93,119 @@ async def test_load_configs_validation_error():
 
 
 @pytest.mark.asyncio
-async def test_load_configs_model_validation_error():
+async def test_load_configs_model_validation_error(caplog):
     """Test loading configs when a model file has validation errors."""
+    caplog.set_level(logging.DEBUG)  # Enable debug logging for this test
+    
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Create a valid model config
+        # Create the expected directory structure: temp_dir/models/ (ModelConfigManager will append env name)
+        temp_path = Path(temp_dir)
+        models_dir = temp_path / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        
+        logger.debug(f"Created test directory structure at: {temp_path}")
+        logger.debug(f"Base models directory: {models_dir}")
+        assert models_dir.exists(), f"Base models directory was not created at {models_dir}"
+        
+        # Create a valid model config with all required fields
         valid_model = {
             "id": "valid_model",
             "name": "Valid Model",
-            "description": "A valid model for testing",
             "endpoint_url": "http://example.com/valid",
-            "version": "1.0.0",
             "active": True,
             "timeout": 30.0,
             "max_retries": 3,
-            "circuit_breaker": {
-                "failure_threshold": 5,
-                "reset_timeout": 30.0
+            "health_check": {
+                "enabled": True,
+                "endpoint": "/health",
+                "interval": 30,
+                "timeout": 5,
+                "failure_threshold": 3,
+                "success_threshold": 2
+            },
+            "headers": {
+                "Content-Type": "application/json"
+            },
+            "platform": {
+                "timeout": 30.0,
+                "max_retries": 3,
+                "health_check": {
+                    "interval": 30,
+                    "timeout": 5,
+                    "failure_threshold": 3,
+                    "success_threshold": 2
+                },
+                "circuit_breaker": {
+                    "failure_threshold": 5,
+                    "reset_timeout": 30.0,
+                    "half_open_timeout": 30.0,
+                    "success_threshold": 2
+                }
             }
         }
         
-        # Create an invalid model config (missing required endpoint_url)
+        # Create an invalid model config (missing required endpoint_url and other fields)
         invalid_model = {
             "id": "invalid_model",
-            "name": "Invalid Model",
-            "description": "An invalid model for testing"
-            # Missing required fields: endpoint_url, version
+            "name": "Invalid Model"
+            # Missing required fields: endpoint_url, health_check, headers, platform
         }
         
-        # Write model files
-        with open(Path(temp_dir) / "valid_model.yaml", "w") as f:
+        # Write model files to the environment-specific models directory
+        with open(models_dir / "valid_model.yaml", "w") as f:
             yaml.dump(valid_model, f)
-        with open(Path(temp_dir) / "invalid_model.yaml", "w") as f:
+        with open(models_dir / "invalid_model.yaml", "w") as f:
             yaml.dump(invalid_model, f)
         
-        # Create manager
-        manager = ModelConfigManager(config_dir=temp_dir)
+        # Create manager with the base config directory
+        logger.debug(f"Creating ModelConfigManager with config_dir={temp_dir}, env=test")
+        manager = ModelConfigManager(config_dir=str(temp_dir), env="test")
         
-        # Should only load the valid model
-        registry, models = await manager.load_configs()
-        assert "valid_model" in models
-        assert "invalid_model" not in models
+        # Log the actual models directory being used
+        logger.debug(f"Manager models directory: {manager.models_dir}")
+        
+        # Ensure the environment-specific models directory exists
+        env_models_dir = Path(manager.models_dir)
+        env_models_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Move the model files to the environment-specific directory
+        for src_file in models_dir.glob("*.yaml"):
+            dest_file = env_models_dir / src_file.name
+            src_file.rename(dest_file)
+            logger.debug(f"Moved {src_file} to {dest_file}")
+        
+        # List files in the models directory for debugging
+        model_files = list(env_models_dir.glob("*.yaml"))
+        logger.debug(f"Found {len(model_files)} YAML files in models directory: {model_files}")
+        
+        # Should only load the valid model and log an error for the invalid one
+        with patch('app.config.models_config.logger.error') as mock_error:
+            try:
+                registry, models = await manager.load_configs()
+                logger.debug(f"Loaded models: {list(models.keys())}")
+                
+                # Debug: Log all files in the models directory
+                all_files = list(Path(manager.models_dir).rglob("*"))
+                logger.debug(f"All files in models directory: {all_files}")
+                
+                # Verify the valid model was loaded
+                assert "valid_model" in models, f"valid_model not found in loaded models: {list(models.keys())}"
+                assert models["valid_model"].endpoint_url == "http://example.com/valid"
+                
+                # Verify the invalid model was not loaded
+                assert "invalid_model" not in models
+                
+                # Verify an error was logged for the invalid model
+                error_logged = any("Failed to validate model configuration" in str(call) for call in mock_error.call_args_list)
+                if not error_logged:
+                    logger.error("Expected error log for invalid model not found in:")
+                    for call in mock_error.call_args_list:
+                        logger.error(f"Error log: {call}")
+                assert error_logged
+                
+            except Exception as e:
+                logger.error(f"Error in load_configs: {str(e)}", exc_info=True)
+                raise
 
 
 @pytest.mark.asyncio

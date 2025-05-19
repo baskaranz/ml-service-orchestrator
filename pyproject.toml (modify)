@@ -1,2 +1,0 @@
-[tool.poetry.dependencies]
-pytest-asyncio = "^0.18.3"

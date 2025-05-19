@@ -80,11 +80,14 @@ def test_llm_circuit_breaker_half_open_success(llm_circuit_breaker, mock_llm):
     import time
     time.sleep(1.1)
     
-    # Next call should succeed
+    # Next two calls should succeed (success_threshold=2)
     mock_llm.generate.side_effect = None
     mock_llm.generate.return_value = "successful response"
-    result = llm_circuit_breaker.execute("test prompt")
-    assert result == "successful response"
+    result1 = llm_circuit_breaker.execute("test prompt")
+    assert result1 == "successful response"
+    assert llm_circuit_breaker.state == CircuitState.HALF_OPEN
+    result2 = llm_circuit_breaker.execute("test prompt")
+    assert result2 == "successful response"
     assert llm_circuit_breaker.state == CircuitState.CLOSED
     assert llm_circuit_breaker.failure_count == 0
 

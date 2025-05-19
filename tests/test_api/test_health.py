@@ -25,8 +25,15 @@ def test_basic_health_check(client: TestClient):
     assert "version" in data
 
 
-def test_detailed_health_check(client: TestClient, mock_settings):
+@patch("app.services.model_registry.ModelRegistryService.list_models", new_callable=MagicMock)
+def test_detailed_health_check(mock_list_models, client: TestClient, mock_settings):
     """Test the detailed health check endpoint."""
+    # Return a list of mock models
+    mock_model = MagicMock()
+    mock_model.id = "test_model_1"
+    mock_model.name = "Test Model 1"
+    mock_model.active = True
+    mock_list_models.return_value = [mock_model]
     response = client.get("/health/details")
     assert response.status_code == 200
     data = response.json()

@@ -22,7 +22,13 @@ class TestModel(BaseModel):
 @pytest.fixture
 def http_client():
     """Create a default HTTP client for testing."""
-    return HttpClient()
+    mock_client = AsyncMock()
+    mock_client.request = AsyncMock()
+    mock_client.aclose = AsyncMock()
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        client = HttpClient()
+        yield client
+        asyncio.run(client.close())
 
 
 @pytest.fixture
@@ -74,6 +80,7 @@ def test_init_defaults():
     assert client.backoff_factor == 0.5
     assert client.auth_config is not None
     assert client.auth_config.get('type', None) is None
+    assert client.http2 is True  # Default should be True
 
 
 def test_init_custom_values():
@@ -83,12 +90,14 @@ def test_init_custom_values():
         timeout=60.0,
         max_retries=5,
         backoff_factor=1.0,
-        auth_config=auth_config
+        auth_config=auth_config,
+        http2=False  # Explicitly set to False for this test
     )
     assert client.timeout == 60.0
     assert client.max_retries == 5
     assert client.backoff_factor == 1.0
     assert client.auth_config == auth_config
+    assert client.http2 is False  # Should respect custom value
 
 
 def test_apply_auth_none(http_client):
@@ -143,223 +152,129 @@ def test_apply_auth_basic(http_client, auth_config_basic):
 @pytest.mark.asyncio
 async def test_request_success(http_client):
     """Test successful HTTP request."""
-    # Mock response
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"result": "success"}
     mock_response.headers = {"Content-Type": "application/json"}
-    
-    # Mock client context manager
-    mock_client = AsyncMock()
-    mock_client.request = AsyncMock(return_value=mock_response)
-    mock_client_context = MagicMock()
-    mock_client_context.__aenter__.return_value = mock_client
-    mock_client_context.__aexit__.return_value = None
-    
-    # Patch httpx.AsyncClient to return our mock
-    with patch("httpx.AsyncClient", return_value=mock_client_context):
-        status, data, headers = await http_client.request(
-            "GET",
-            "http://example.com",
-            headers={"Accept": "application/json"},
-            json_data={"key": "value"},
-            params={"param": "value"}
-        )
-        
-        # Verify response
-        assert status == 200
-        assert data == {"result": "success"}
-        assert headers == {"Content-Type": "application/json"}
-        
-        # Verify request was made properly
-        mock_client.request.assert_called_once()
-        args = mock_client.request.call_args[1]
-        assert args["method"] == "GET"
-        assert args["url"] == "http://example.com"
-        assert args["headers"]["Accept"] == "application/json"
-        assert args["json"] == {"key": "value"}
-        assert args["params"] == {"param": "value"}
+    http_client._client.request.return_value = mock_response
+    status, data, headers = await http_client.request(
+        "GET",
+        "http://example.com",
+        headers={"Accept": "application/json"},
+        json={"key": "value"},
+        params={"param": "value"}
+    )
+    assert status == 200
+    assert data == {"result": "success"}
+    assert headers == {"Content-Type": "application/json"}
+    http_client._client.request.assert_called_once()
+    args = http_client._client.request.call_args[1]
+    assert args["method"] == "GET"
+    assert args["url"] == "http://example.com"
+    assert args["headers"]["Accept"] == "application/json"
+    assert args["json"] == {"key": "value"}
+    assert args["params"] == {"param": "value"}
 
 
 @pytest.mark.asyncio
 async def test_request_pydantic_model(http_client):
     """Test request with Pydantic model as JSON data."""
-    # Mock response
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"status": "ok"}
     mock_response.headers = {}
-    
-    # Mock client context manager
-    mock_client = AsyncMock()
-    mock_client.request = AsyncMock(return_value=mock_response)
-    mock_client_context = MagicMock()
-    mock_client_context.__aenter__.return_value = mock_client
-    mock_client_context.__aexit__.return_value = None
-    
-    # Create a Pydantic model
+    http_client._client.request.return_value = mock_response
     model = TestModel(name="test", value=123)
-    
-    # Patch httpx.AsyncClient to return our mock
-    with patch("httpx.AsyncClient", return_value=mock_client_context):
-        await http_client.request(
-            "POST",
-            "http://example.com",
-            json_data=model
-        )
-        
-        # Verify JSON serialization
-        mock_client.request.assert_called_once()
-        args = mock_client.request.call_args[1]
-        assert args["json"] == {"name": "test", "value": 123}
+    await http_client.request(
+        "POST",
+        "http://example.com",
+        json=model
+    )
+    http_client._client.request.assert_called_once()
+    args = http_client._client.request.call_args[1]
+    assert args["json"] == {"name": "test", "value": 123}
 
 
 @pytest.mark.asyncio
 async def test_request_json_parse_error(http_client):
     """Test handling response JSON parsing errors."""
-    # Use patch to intercept response.json() and make it raise an error
     with patch("httpx.Response.json", side_effect=ValueError("Invalid JSON")):
-        # Mock status code 200 but invalid JSON response
         mock_response = httpx.Response(200, content=b"{invalid json}", headers={})
-        
-        # Mock client to return our mock response
-        with patch("httpx.AsyncClient.request", new_callable=AsyncMock, 
-                  return_value=mock_response):
-            # Now the test should raise ModelRequestError when parsing the response
-            with pytest.raises(ModelRequestError):
-                await http_client.request(
-                    method="GET",
-                    url="http://test.com/api",
-                    headers={},
-                    params={}
-                )
+        http_client._client.request = AsyncMock(return_value=mock_response)
+        with pytest.raises(ModelRequestError):
+            await http_client.request(
+                method="GET",
+                url="http://test.com/api",
+                headers={},
+                params={}
+            )
 
 
 @pytest.mark.asyncio
 async def test_request_with_retry_success(http_client):
     """Test request with retry that eventually succeeds."""
-    # Mock responses - first one fails, second succeeds
-    mock_error_response = MagicMock()
-    mock_error_response.request = AsyncMock(side_effect=httpx.RequestError("Connection error"))
-    
+    mock_error = httpx.RequestError("Connection error")
     mock_success_response = MagicMock()
     mock_success_response.status_code = 200
     mock_success_response.json.return_value = {"result": "success"}
     mock_success_response.headers = {}
-    
-    # Mock clients
-    mock_error_client = AsyncMock()
-    mock_error_client.request = AsyncMock(side_effect=httpx.RequestError("Connection error"))
-    mock_error_client_context = MagicMock()
-    mock_error_client_context.__aenter__.return_value = mock_error_client
-    mock_error_client_context.__aexit__.return_value = None
-    
-    mock_success_client = AsyncMock()
-    mock_success_client.request = AsyncMock(return_value=mock_success_response)
-    mock_success_client_context = MagicMock()
-    mock_success_client_context.__aenter__.return_value = mock_success_client
-    mock_success_client_context.__aexit__.return_value = None
-    
-    # Patch httpx.AsyncClient and asyncio.sleep
-    with patch("httpx.AsyncClient", side_effect=[mock_error_client_context, mock_success_client_context]), \
-         patch("asyncio.sleep", new_callable=AsyncMock):
-        
+    http_client._client.request = AsyncMock(side_effect=[mock_error, mock_success_response])
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         status, data, headers = await http_client.request(
             "GET",
             "http://example.com"
         )
-        
-        # Verify response
         assert status == 200
         assert data == {"result": "success"}
-        
-        # Verify sleep was called
         asyncio.sleep.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_request_max_retries_exceeded(http_client):
     """Test request that fails after max retries."""
-    # Set low retry count for faster test
     http_client.max_retries = 2
-    
-    # Mock client that always fails
-    mock_client = AsyncMock()
-    mock_client.request = AsyncMock(side_effect=httpx.RequestError("Connection error"))
-    mock_client_context = MagicMock()
-    mock_client_context.__aenter__.return_value = mock_client
-    mock_client_context.__aexit__.return_value = None
-    
-    # Patch httpx.AsyncClient and asyncio.sleep
-    with patch("httpx.AsyncClient", return_value=mock_client_context), \
-         patch("asyncio.sleep", new_callable=AsyncMock):
-        
-        # Expect ModelRequestError after all retries
+    http_client._client.request = AsyncMock(side_effect=httpx.RequestError("Connection error"))
+    with patch("asyncio.sleep", new_callable=AsyncMock):
         with pytest.raises(ModelRequestError):
             await http_client.request("GET", "http://example.com")
-        
-        # Verify sleep was called once (for 2 attempts, 1 sleep)
         assert asyncio.sleep.call_count == 1
-        # Verify the first backoff call
-        first_delay = http_client.backoff_factor * (2 ** 0)  # 0.5 * 1 = 0.5
+        first_delay = http_client.backoff_factor * (2 ** 0)
         asyncio.sleep.assert_called_once_with(first_delay)
 
 
 @pytest.mark.asyncio
 async def test_request_with_auth(http_client, auth_config_api_key_header):
     """Test request with authentication applied."""
-    # Set auth config
     http_client.auth_config = auth_config_api_key_header
-    
-    # Mock response
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"result": "success"}
     mock_response.headers = {}
-    
-    # Mock client
-    mock_client = AsyncMock()
-    mock_client.request = AsyncMock(return_value=mock_response)
-    mock_client_context = MagicMock()
-    mock_client_context.__aenter__.return_value = mock_client
-    mock_client_context.__aexit__.return_value = None
-    
-    # Patch httpx.AsyncClient
-    with patch("httpx.AsyncClient", return_value=mock_client_context):
-        await http_client.request(
-            "GET",
-            "http://example.com",
-            headers={"Accept": "application/json"}
-        )
-        
-        # Verify auth header was added
-        mock_client.request.assert_called_once()
-        args = mock_client.request.call_args[1]
-        assert args["headers"]["X-API-Key"] == "test-api-key"
-        assert args["headers"]["Accept"] == "application/json"
+    http_client._client.request.return_value = mock_response
+    await http_client.request(
+        "GET",
+        "http://example.com",
+        headers={"Accept": "application/json"}
+    )
+    http_client._client.request.assert_called_once()
+    args = http_client._client.request.call_args[1]
+    assert args["headers"]["X-API-Key"] == "test-api-key"
+    assert args["headers"]["Accept"] == "application/json"
 
 
 @pytest.mark.asyncio
 async def test_request_custom_timeout(http_client):
     """Test request with custom timeout."""
-    # Mock response
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {}
     mock_response.headers = {}
-    
-    # Mock client
-    mock_client = AsyncMock()
-    mock_client.request = AsyncMock(return_value=mock_response)
-    mock_client_context = MagicMock()
-    mock_client_context.__aenter__.return_value = mock_client
-    mock_client_context.__aexit__.return_value = None
-    
-    # Patch httpx.AsyncClient
-    with patch("httpx.AsyncClient", return_value=mock_client_context):
-        # Use custom timeout
-        await http_client.request(
-            "GET",
-            "http://example.com",
-            timeout=60.0
-        )
+    http_client._client.request.return_value = mock_response
+    await http_client.request(
+        "GET",
+        "http://example.com",
+        timeout=60.0
+    )
+    http_client._client.request.assert_called_once()
+    args = http_client._client.request.call_args[1]
+    assert args["timeout"] == 60.0

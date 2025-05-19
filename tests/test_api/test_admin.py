@@ -31,15 +31,26 @@ def test_admin_unauthorized(client: TestClient):
     assert "invalid" in data["error"].lower() or "unauthorized" in data["error"].lower()
 
 
-@patch("app.services.model_registry.ModelRegistryService.list_models")
-def test_admin_list_models(mock_list_models, client: TestClient, setup_api_key):
+@patch("app.services.model_registry.ModelRegistryService")
+def test_admin_list_models(MockModelRegistry, client: TestClient, setup_api_key):
     """Test listing models with valid API key."""
     # Setup mock to return list of models
+    mock_registry = MockModelRegistry.return_value
     mock_models = [
-        ModelSummary(id="test_model_1", name="Test Model 1", description="desc", version="1.0.0", active=True),
-        ModelSummary(id="test_model_2", name="Test Model 2", description="desc", version="1.0.0", active=True)
+        ModelConfig(
+            id="test_model_1", 
+            name="Test Model 1", 
+            endpoint_url="http://test1.com",
+            active=True
+        ),
+        ModelConfig(
+            id="test_model_2", 
+            name="Test Model 2",
+            endpoint_url="http://test2.com",
+            active=True
+        )
     ]
-    mock_list_models.return_value = mock_models
+    mock_registry.list_models.return_value = mock_models
     
     response = client.get(
         "/admin/models", 
@@ -51,8 +62,10 @@ def test_admin_list_models(mock_list_models, client: TestClient, setup_api_key):
     assert "models" in data
     assert data["count"] == 2
     assert len(data["models"]) == 2
-    assert data["models"][0]["id"] == "test_model_1"
-    assert data["models"][1]["id"] == "test_model_2"
+    # Check that the response contains the expected model IDs
+    model_ids = [model["id"] for model in data["models"]]
+    assert "test_model_1" in model_ids
+    assert "test_model_2" in model_ids
 
 
 @patch("app.services.model_registry.ModelRegistryService.get_model_config")
@@ -70,7 +83,7 @@ def test_admin_get_model(mock_get_model, client: TestClient, setup_api_key, mode
     data = response.json()
     assert data["id"] == "test_model_1"
     assert data["name"] == "Test Model"
-    assert data["endpoint_url"] == "http://localhost:8888/test"
+    assert data["endpoint_url"] == "http://localhost:8888/predict"
 
 
 @patch("app.services.model_registry.ModelRegistryService.get_model_config")

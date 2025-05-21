@@ -1,38 +1,114 @@
-# ML Model Orchestrator
+# ML Service Orchestrator
 
-A FastAPI-based service for orchestrating multiple ML model predictions.
+A high-performance, production-ready FastAPI service for orchestrating and managing multiple ML model predictions with built-in fault tolerance, health monitoring, and dynamic model registration.
 
-## Prerequisites
+## 🌟 Features
+
+- **Model Agnostic**: Support for any ML model with a REST API
+- **Dynamic Model Registration**: Register and unregister models at runtime
+- **Health Monitoring**: Built-in health checks and circuit breakers
+- **Error Handling**: Comprehensive error handling with retry mechanisms
+- **API Documentation**: Full OpenAPI/Swagger documentation
+- **Containerized**: Ready for Docker and Kubernetes deployment
+- **Secure**: API key authentication and request validation
+
+## 🚀 Quick Start
+
+### Prerequisites
 
 - Docker and Docker Compose
 - Python 3.11 or higher
 - Virtual environment (recommended)
-- Hugging Face API key (for production) or Ollama (for development)
+- For HTTP/2 support: `pip install 'httpx[http2]'`
 
-## Running the Application
+### Environment Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-org/ml-service-orchestrator.git
+   cd ml-service-orchestrator
+   ```
+
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Run the application:
+   ```bash
+   .venv/bin/python -m app.main
+   ```
+
+## 🏃 Running the Application
 
 ### 1. Start the Orchestrator
 
-The orchestrator service runs in Docker and is model-agnostic. It will automatically discover and use any models configured in the `config/models/` directory.
+The orchestrator service runs in Docker and automatically discovers models configured in the environment-specific directory (e.g., `config/local/models/` for local development).
 
 ```bash
-# Start the orchestrator service using the provided script
+# Start the orchestrator service
 ./scripts/start_orchestrator.sh
+
+# Or run directly with Docker Compose
+docker-compose up -d orchestrator
 ```
 
-### 2. Running Mock Models (for Testing)
+### 2. Run Mock Models (for Testing)
 
-For testing purposes, you can run mock model servers in Docker. The mock servers simulate ML model behavior and are useful for development and testing.
+For testing, you can run mock model servers that simulate ML model behavior using the Makefile commands:
 
 ```bash
-# Start mock model 1
+# Start all mock models
+make mock-up
+
+# Stop mock models
+make mock-down
+```
+
+Or use the scripts directly:
+
+```bash
+# Start mock model 1 on port 8001
 ./scripts/mocks/start_mock_model.sh mock-model-1 8001
 
-# Start mock model 2
+# Start mock model 2 on port 8002
 ./scripts/mocks/start_mock_model.sh mock-model-2 8002
 ```
 
-### 3. Verify Services
+### 3. Configure Docker Networking
+
+When running the orchestrator and mock models, you need to configure the model endpoints based on your deployment scenario:
+
+#### Host-to-Container Communication
+
+When running the orchestrator on the host and mock models in Docker containers:
+
+```bash
+# Configure models for host-to-container communication
+make configure-models-host
+```
+
+This updates model configurations to use `http://localhost:{PORT}` endpoints (e.g., `http://localhost:8001` for mock-model-1).
+
+#### Container-to-Container Communication
+
+When running both the orchestrator and models in Docker containers:
+
+```bash
+# Configure models for container-to-container communication
+make configure-models-docker
+```
+
+This updates model configurations to use `http://{container-name}:{PORT}` endpoints (e.g., `http://mock-model-1:8000`).
+
+
+### 4. Verify Services
 
 Check if all services are running correctly:
 
@@ -43,57 +119,200 @@ curl http://localhost:8000/health
 # Check mock model 1 health
 curl http://localhost:8001/health
 
-# Check mock model 2 health
-curl http://localhost:8002/health
+# View API documentation (after starting the orchestrator)
+open http://localhost:8000/docs
 ```
 
-### 4. Test Predictions
+### 5. Test Predictions
 
-Test the prediction endpoints:
+Test the prediction endpoints using the orchestrator:
 
 ```bash
-# Test mock model 1 prediction
-curl -X POST http://localhost:8001/predict \
-  -H "Content-Type: application/json" \
-  -d '{"inputs": {"data": [1, 2, 3, 4, 5]}, "parameters": {"threshold": 0.5}}'
+# Get list of registered models
+curl -X 'GET' \
+  'http://localhost:8000/api/v1/models' \
+  -H 'accept: application/json'
 
-# Test mock model 2 prediction
-curl -X POST http://localhost:8002/predict \
-  -H "Content-Type: application/json" \
-  -d '{"inputs": {"data": [1, 2, 3, 4, 5]}, "parameters": {"threshold": 0.5}}'
+# Make a prediction with mock-model-1
+curl -X 'POST' \
+  'http://localhost:8000/api/v1/models/mock-model-1' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{"input": "Sample input text"}'
+
+# Check model health status
+curl -X 'GET' \
+  'http://localhost:8000/api/v1/models/mock-model-1/health' \
+  -H 'accept: application/json'
 ```
 
-## Configuration
+**Note**: The mock models expect a JSON payload with a key `input` (e.g., `{"input": "some_string"}`). Using a different format like `{"data": ...}` will cause a validation error.
+
+## ⚙️ Configuration
+
+### Model Registration
+
+Models can be registered in two ways:
+
+1. **YAML Configuration Files** (Recommended for production)
+   - Place model configs in the environment-specific directory (e.g., `config/local/models/` for local development)
+   - Automatically loaded at startup
+   - Supports hot-reloading with `POST /refresh` endpoint
+
+2. **API Registration** (For dynamic environments)
+   - Register models at runtime via API
+   - Lost on service restart unless persisted
 
 ### Model Configuration
 
-Model configurations are stored in the `config/models` directory. The main application configuration is in `config/app.cfg`. Each model should have its own YAML configuration file with the following structure:
+Each model requires a YAML configuration file in the environment-specific directory (e.g., `config/local/models/`):
 
 ```yaml
-# Basic configuration (required)
-id: model-name
-name: Model Name
-endpoint_url: http://localhost:8001
+# Required fields
+id: sentiment-analyzer
+name: Sentiment Analysis Model
+endpoint_url: http://mock-model-1:8000
+active: true
 
-# Optional LLM provider configuration
-llm_provider:
-  type: huggingface # or ollama
-  model_name: mistralai/Mistral-7B-Instruct-v0.2
+# Platform configuration
+platform:
+  name: rest
+  config:
+    timeout: 30  # seconds
+    max_retries: 3
+    
+    # Health check configuration
+    health_check:
+      enabled: true
+      endpoint: /health
+      interval: 30
+      timeout: 5
+      failure_threshold: 3
+      
+    # Circuit breaker settings
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 5
+      reset_timeout: 30
+      half_open_timeout: 30
+      success_threshold: 2
 ```
-
-The LLM provider configuration is optional and can be omitted if you don't need advanced error handling or LLM-based features.
 
 ### Environment Variables
 
-The orchestrator service uses the following environment variables (configured in docker-compose.yml):
+Configure the orchestrator using these environment variables:
 
-- `APP_NAME`: Application name (default: orchestrator)
-- `APP_VERSION`: Application version (default: 1.0.0)
-- `DEBUG`: Debug mode (default: true)
-- `HOST`: Host to bind to (default: 0.0.0.0)
-- `PORT`: Port to listen on (default: 8000)
-- `HUGGINGFACE_API_KEY`: API key for Hugging Face models (required only if using Hugging Face LLM provider)
-- `APP_ENV`: Environment (development, production, test)
+```ini
+# Application
+APP_NAME=ml-orchestrator
+APP_ENV=development  # development, staging, production
+DEBUG=true
+
+# Server
+HOST=0.0.0.0
+PORT=8000
+WORKERS=4
+
+# Model defaults
+DEFAULT_TIMEOUT=30.0
+DEFAULT_MAX_RETRIES=3
+
+# Security
+API_KEYS=your-api-key-1,your-api-key-2
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+```
+
+### Configuration Precedence
+
+1. Environment variables (highest priority)
+2. `.env` file in project root
+3. Default values in code (lowest priority)
+
+## 📚 API Documentation
+
+### Interactive Documentation
+
+Access the interactive API documentation when the service is running:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+### Key Endpoints
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `GET /api/v1/models` | GET | List all registered models | None |
+| `POST /api/v1/models/{model_id}` | POST | Submit prediction request | API Key |
+| `GET /api/v1/models/{model_id}/health` | GET | Get model health status | None |
+| `GET /health` | GET | Basic health check | None |
+| `GET /health/details` | GET | Detailed health information | None |
+| `POST /refresh` | POST | Reload model configurations | API Key |
+
+### Authentication
+
+Secure your API endpoints using API key authentication. Include the API key in the `X-API-Key` header:
+
+```bash
+curl -X 'GET' \
+  'http://localhost:8000/api/v1/models' \
+  -H 'X-API-Key: your-api-key' \
+  -H 'accept: application/json'
+```
+
+## 🚀 Deployment
+
+### Docker Deployment
+
+1. Build the container:
+   ```bash
+   docker build -t ml-orchestrator:latest .
+   ```
+
+2. Run the container:
+   ```bash
+   docker run -d \
+     --name ml-orchestrator \
+     -p 8000:8000 \
+     -v $(pwd)/config:/app/config \
+     --env-file .env \
+     ml-orchestrator:latest
+   ```
+
+### Kubernetes Deployment
+
+1. Create a namespace:
+   ```bash
+   kubectl create namespace ml-orchestrator
+   ```
+
+2. Create a secret for API keys:
+   ```bash
+   kubectl -n ml-orchestrator create secret generic ml-orchestrator-secrets \
+     --from-literal=API_KEYS='your-api-key-1,your-api-key-2'
+   ```
+
+3. Deploy the application:
+   ```bash
+   kubectl -n ml-orchestrator apply -f k8s/
+   ```
+
+4. Access the service:
+   ```bash
+   kubectl -n ml-orchestrator port-forward svc/ml-orchestrator 8000:8000
+   ```
+
+## 📚 Additional Documentation
+
+- [API Specification](docs/api/orchestrator-api.yaml) - Complete OpenAPI 3.1 specification
+- [Platform Configuration](docs/platform-configuration.md) - Detailed configuration options
+- [Model Registration](docs/model-registration.md) - Guide to registering models
+- [YAML Model Registration](docs/yaml-model-registration.md) - Detailed guide for YAML-based model configuration
+- [Run Instructions](docs/run-instructions.md) - Detailed guide for running the orchestrator
+- [Docker Deployment](docs/docker-deployment.md) - Comprehensive guide for Docker deployment, including image building and Docker Compose
+- [End-to-End Testing](docs/end-to-end-testing-guide.md) - Testing guide
 
 ## 🚦 Error Handling
 
@@ -172,6 +391,34 @@ The orchestrator service uses the following environment variables (configured in
 - `PORT`: Port to listen on (default: 8000)
 - `HUGGINGFACE_API_KEY`: API key for Hugging Face models (required only if using Hugging Face LLM provider)
 - `APP_ENV`: Environment (development, production, test)
+
+## 🌐 HTTP/2 Configuration
+
+The orchestrator supports both HTTP/1.1 (default) and HTTP/2 for model communication.
+
+### Default Behavior
+- Uses HTTP/1.1 by default for maximum compatibility
+- No additional dependencies required
+
+### Enabling HTTP/2
+To use HTTP/2 with models that support it:
+
+1. Install the required dependency:
+   ```bash
+   pip install 'httpx[http2]'
+   ```
+
+2. Enable HTTP/2 in your model configuration:
+   ```yaml
+   http2: true  # Only if your model server supports HTTP/2
+   ```
+
+### When to Use HTTP/2
+- **Use HTTP/2** when connecting to modern model servers that support it
+- **Stick with HTTP/1.1** for:
+  - Testing environments
+  - Servers without HTTP/2 support
+  - When you want to minimize dependencies
 
 ## 🚦 Advanced LLM-Based Error Handling
 
@@ -308,7 +555,7 @@ docker compose down
 
 ### Adding New Models
 
-1. Create a new model configuration file in `config/models/`
+1. Create a new model configuration file in the environment-specific directory (e.g., `config/local/models/`)
 2. Configure the LLM provider and error handling settings
 3. Ensure the model server implements the required endpoints:
    - `GET /health`: Health check endpoint
@@ -331,7 +578,7 @@ The mock server (`mocks/model_mock.py`) can be customized to simulate different 
 
 2. If the orchestrator can't connect to models:
 
-   - Verify model configurations in `config/models/`
+   - Verify model configurations in the environment-specific directory (e.g., `config/local/models/`)
    - Check if model servers are running
    - Verify network connectivity between services
 
@@ -695,7 +942,7 @@ LLM Mode:
 Here's a complete example of a model configuration with all available options:
 
 ```yaml
-# config/models/example-model.yaml
+# config/local/models/example-model.yaml
 
 # Basic model configuration (required)
 id: example-model

@@ -43,31 +43,144 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE
+# IDE and Editor files
+# PyCharm/IntelliJ
 .idea/
+*.iml
+*.iws
+*.ipr
+.idea_modules/
+out/
+
+# VSCode
 .vscode/
+*.code-workspace
+.history/
+
+# Vim
 *.swp
 *.swo
+*~
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# AI assistants
 .cursor/
 .claude/
+.copilot/
+.codeium/
+.tabnine/
+.github/copilot/
+.windsurfrules
 
 # Logs
 logs/
 *.log
+*.log.*
+log.*
+logs.*
+**/logs/
+**/archive/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+# Application specific logs
+orchestrator.log
+app_*.log
+model_*.log
+api_*.log
+debug_*.log
+error_*.log
+info_*.log
+warning_*.log
+test_*.log
 
 # Docker
 .docker/
 docker-compose.override.yml
+docker-compose.dev.yml
+docker-compose.local.yml
+.dockerignore
+docker-data/
 
 # Project specific
 config/models/*.yaml
 !config/models/.gitkeep
 config/env/*.env
 !config/env/.gitkeep
+
+# Generated files
+generated/
+.generated/
+**/generated/
+**/node_modules/
+
+# Temporary model files
+model_cache/
+model_weights/
+checkpoints/
+models/saved/
+tensorboard/
+tensorboard_logs/
+wandb/
+mlruns/
+runs/
+*.onnx
+*.pt
+*.pth
+*.h5
+*.hdf5
+*.pkl
+*.joblib
+*.bin
+*.model
+*.weights
+*.tflite
+*.pb
+*.saved_model
+**/pretrained/
+**/embeddings/
+**/features/
+**/predictions/
+**/results/
+**/outputs/
+
+# Sensitive data
+**/credentials/
+**/secrets/
+**/*credentials*
+**/*secret*
+**/*password*
+**/*api_key*
+**/*apikey*
+**/*token*
+.netrc
+
+# Runtime configuration
+**/runtime_config/
+local_config.yaml
+dev_settings.json
 
 # Temporary files
 *.tmp
@@ -76,35 +189,9 @@ config/env/*.env
 *.swp
 *~
 
-# Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# Distribution / packaging has duplicates - removed
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
+# Unit test / coverage reports - duplicates removed
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -118,14 +205,7 @@ celerybeat-schedule
 # SageMath parsed files
 *.sage.py
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Environments - duplicates removed
 
 # Spyder project settings
 .spyderproject
@@ -151,13 +231,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# VS Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.code-workspace
+# VS Code - duplicates removed
 
 # Local development
 local_settings.py

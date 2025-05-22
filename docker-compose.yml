@@ -84,5 +84,4 @@ services:
 
 networks:
   ml-network:
-    external: true
     driver: bridge

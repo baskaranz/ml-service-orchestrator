@@ -1,8 +1,11 @@
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel
+
 
 class ModelConfig(BaseModel):
     """Configuration for a model endpoint."""
+
     id: str
     name: str
     endpoint_url: str
@@ -10,4 +13,4 @@ class ModelConfig(BaseModel):
     description: Optional[str] = None
     version: Optional[str] = None
     error_handling: Optional[Dict[str, Any]] = None
-    circuit_breaker: Optional[Dict[str, Any]] = None 
+    circuit_breaker: Optional[Dict[str, Any]] = None

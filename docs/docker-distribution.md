@@ -78,11 +78,13 @@ You have several options for running the container:
 #### Option 1: Run Just the Orchestrator (Simplest)
 
 ```bash
-# Run the orchestrator container
-docker run -p 8000:8000 ml-orchestrator:latest
+# Run the orchestrator container with the required environment variable
+docker run -p 8000:8000 -e APP_ENV=local ml-orchestrator:latest
 ```
 
 This maps port 8000 from the container to port 8000 on your host, allowing you to access the orchestrator API at http://localhost:8000.
+
+**Important**: You must set the `APP_ENV` environment variable to one of: `dev`, `stg`, `prod`, `test`, or `local`. Without this, the application will fail to start with an environment error.
 
 #### Option 2: Run with Docker Compose (Recommended)
 
@@ -108,6 +110,7 @@ make docker-compose-safe
 ```bash
 # Run with custom environment variables
 docker run -p 8000:8000 \
+  -e APP_ENV=local \
   -e LOG_LEVEL=DEBUG \
   -e CONFIG_DIR=/app/config/local \
   -e MODELS_DIR=/app/config/local/models \
@@ -146,6 +149,7 @@ curl -X POST http://localhost:8000/api/v1/models/mock-model-1 \
 ```bash
 # Mount custom configuration
 docker run -p 8000:8000 \
+  -e APP_ENV=local \
   -v /path/to/your/config:/app/config/local \
   ml-orchestrator:latest
 ```
@@ -155,6 +159,7 @@ docker run -p 8000:8000 \
 ```bash
 # Mount a volume for logs
 docker run -p 8000:8000 \
+  -e APP_ENV=local \
   -v /path/to/logs:/app/logs \
   ml-orchestrator:latest
 ```
@@ -163,10 +168,24 @@ docker run -p 8000:8000 \
 
 ```bash
 # Run in the background
-docker run -d -p 8000:8000 ml-orchestrator:latest
+docker run -d -p 8000:8000 -e APP_ENV=local ml-orchestrator:latest
 ```
 
 ## Troubleshooting
+
+### Environment Configuration Issues
+
+If you see an error like this:
+
+```
+ValueError: Invalid environment: production. Must be one of: dev, stg, prod, test, local
+```
+
+Make sure to set the `APP_ENV` environment variable to one of the allowed values:
+
+```bash
+docker run -p 8000:8000 -e APP_ENV=local ml-orchestrator:latest
+```
 
 ### Network Issues
 

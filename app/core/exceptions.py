@@ -2,11 +2,9 @@
 Custom exception handlers for the application.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from fastapi import Request
-from fastapi.exception_handlers import http_exception_handler
-from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -17,8 +15,14 @@ logger = get_logger(__name__)
 
 class ModelRequestError(Exception):
     """Exception raised when a model request fails."""
-    
-    def __init__(self, message: str, status_code: int = 503, model_id: Optional[str] = None, details: Optional[dict] = None):
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 503,
+        model_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ):
         self.message = message
         self.status_code = status_code
         self.model_id = model_id
@@ -28,7 +32,7 @@ class ModelRequestError(Exception):
 
 class CircuitBreakerError(Exception):
     """Exception raised when a circuit breaker is open."""
-    
+
     def __init__(self, *args, **kwargs):
         # Accept both (message, model_id) and (model_id, message) signatures
         if len(args) == 2:
@@ -36,15 +40,15 @@ class CircuitBreakerError(Exception):
             message, model_id = args
         elif len(args) == 1:
             # Called as (model_id,) or (message,)
-            if 'model_id' in kwargs:
-                model_id = kwargs['model_id']
+            if "model_id" in kwargs:
+                model_id = kwargs["model_id"]
                 message = args[0]
             else:
                 model_id = args[0]
-                message = kwargs.get('message', None)
+                message = kwargs.get("message", None)
         else:
-            model_id = kwargs.get('model_id', None)
-            message = kwargs.get('message', None)
+            model_id = kwargs.get("model_id", None)
+            message = kwargs.get("message", None)
         if model_id is None:
             raise ValueError("model_id is required for CircuitBreakerError")
         self.model_id = model_id
@@ -54,7 +58,7 @@ class CircuitBreakerError(Exception):
 
 class ConfigurationError(Exception):
     """Exception raised when there is a configuration error."""
-    
+
     def __init__(self, message: str, details: Optional[dict] = None):
         self.message = message
         self.details = details
@@ -63,7 +67,7 @@ class ConfigurationError(Exception):
 
 class ModelNotFoundError(Exception):
     """Exception raised when a model is not found."""
-    
+
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
@@ -71,7 +75,7 @@ class ModelNotFoundError(Exception):
 
 class ModelAlreadyExistsError(Exception):
     """Exception raised when attempting to add a model that already exists."""
-    
+
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
@@ -79,11 +83,8 @@ class ModelAlreadyExistsError(Exception):
 
 async def model_request_error_handler(request: Request, exc: ModelRequestError) -> JSONResponse:
     """Handle ModelRequestError exceptions."""
-    logger.error(
-        f"Model request error: {exc.message}",
-        extra={"model_id": exc.model_id}
-    )
-    
+    logger.error(f"Model request error: {exc.message}", extra={"model_id": exc.model_id})
+
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -96,11 +97,8 @@ async def model_request_error_handler(request: Request, exc: ModelRequestError) 
 
 async def circuit_breaker_error_handler(request: Request, exc: CircuitBreakerError) -> JSONResponse:
     """Handle CircuitBreakerError exceptions."""
-    logger.warning(
-        f"Circuit breaker error: {exc.message}",
-        extra={"model_id": exc.model_id}
-    )
-    
+    logger.warning(f"Circuit breaker error: {exc.message}", extra={"model_id": exc.model_id})
+
     return JSONResponse(
         status_code=503,
         content={
@@ -116,7 +114,7 @@ async def configuration_error_handler(request: Request, exc: ConfigurationError)
     logger.error(
         f"Configuration error: {exc.message}",
     )
-    
+
     return JSONResponse(
         status_code=500,
         content={
@@ -132,7 +130,7 @@ async def model_not_found_error_handler(request: Request, exc: ModelNotFoundErro
     logger.error(
         f"Model not found: {exc.message}",
     )
-    
+
     return JSONResponse(
         status_code=404,
         content={
@@ -142,12 +140,14 @@ async def model_not_found_error_handler(request: Request, exc: ModelNotFoundErro
     )
 
 
-async def model_already_exists_error_handler(request: Request, exc: ModelAlreadyExistsError) -> JSONResponse:
+async def model_already_exists_error_handler(
+    request: Request, exc: ModelAlreadyExistsError
+) -> JSONResponse:
     """Handle ModelAlreadyExistsError exceptions."""
     logger.error(
         f"Model already exists: {exc.message}",
     )
-    
+
     return JSONResponse(
         status_code=409,
         content={
@@ -160,11 +160,11 @@ async def model_already_exists_error_handler(request: Request, exc: ModelAlready
 async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     """
     Handle HTTPException with custom format.
-    
+
     Args:
         request: FastAPI request object
         exc: The HTTPException
-        
+
     Returns:
         JSON response with error details
     """
@@ -173,8 +173,8 @@ async def http_error_handler(request: Request, exc: StarletteHTTPException) -> J
         content={
             "error": str(exc.detail),
             "code": f"HTTP_{exc.status_code}",
-            "details": getattr(exc, "details", None)
-        }
+            "details": getattr(exc, "details", None),
+        },
     )
 
 

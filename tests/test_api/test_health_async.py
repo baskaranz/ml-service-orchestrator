@@ -2,17 +2,14 @@
 Tests for health check endpoints using async client.
 """
 
-import asyncio
 import platform
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from fastapi import status
-from httpx import AsyncClient
 
-from app.schemas.api_models import HealthStatus, ComponentHealth, HealthResponse
-from app.api.routers.health import get_system_health, get_registry_health, update_overall_status
+from app.api.routers.health import get_registry_health, get_system_health, update_overall_status
+from app.schemas.api_models import ComponentHealth, HealthStatus
 from app.services.model_registry import ModelRegistryService
 
 
@@ -27,15 +24,15 @@ def mock_model_registry():
             name="Test Model 1",
             description="Test model 1",
             version="1.0.0",
-            active=True
+            active=True,
         ),
         "test_model_2": MagicMock(
             id="test_model_2",
             name="Test Model 2",
             description="Test model 2",
             version="1.0.0",
-            active=True
-        )
+            active=True,
+        ),
     }
     return registry
 
@@ -76,8 +73,10 @@ async def test_detailed_health_check_async(mock_list_models, app, mock_settings)
 @pytest.mark.asyncio
 async def test_detailed_health_check_with_system_error(app, mock_settings):
     """Test detailed health check when system health has an error."""
+
     def mock_raise(*args, **kwargs):
         raise Exception("Test system error")
+
     with patch("platform.python_version", side_effect=mock_raise):
         client = TestClient(app)
         response = client.get("/health/details")
@@ -85,7 +84,7 @@ async def test_detailed_health_check_with_system_error(app, mock_settings):
         data = response.json()
         # Should reflect an ERROR status if system health fails
         assert data["status"] == "ERROR"
-        
+
         # Check system component has error
         components = data.get("components", {})
         assert isinstance(components, dict)
@@ -103,20 +102,20 @@ async def test_detailed_health_check_with_warning(app, mock_model_registry):
     # Make all models inactive
     for model_id, model in mock_model_registry._models.items():
         model.active = False
-    
+
     try:
         # Create a TestClient from the app
         client = TestClient(app)
-        
+
         # Make the request
         response = client.get("/health/details")
-        
+
         # Check response - should reflect the warning
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
         assert data["status"] == "WARNING"  # Overall status should be warning
-        
+
         # Check registry component has warning
         components = data.get("components", {})
         assert isinstance(components, dict)
@@ -138,23 +137,22 @@ async def test_detailed_health_check_with_mock_registry_error(app):
     """Test detailed health check when registry fails to get models."""
     # Create a custom route handler that raises an exception in get_registry_health
     error_health = ComponentHealth(
-        status=HealthStatus.ERROR,
-        details={"error": "Test registry error"}
+        status=HealthStatus.ERROR, details={"error": "Test registry error"}
     )
-    
+
     with patch("app.api.routers.health.get_registry_health", return_value=error_health):
         # Create a TestClient from the app
         client = TestClient(app)
-        
+
         # Make the request
         response = client.get("/health/details")
-        
+
         # Check response - should reflect the error
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
         assert data["status"] == "ERROR"  # Overall status should be error
-        
+
         # Check registry component has error
         components = data.get("components", {})
         assert isinstance(components, dict)
@@ -173,10 +171,10 @@ def test_get_system_health_with_platform_details():
         platform,
         python_version=lambda: "3.9.0",
         platform=lambda: "Test Platform",
-        machine=lambda: "x86_64"
+        machine=lambda: "x86_64",
     ):
         health = get_system_health()
-        
+
         assert health.status == HealthStatus.OK
         assert health.details["python_version"] == "3.9.0"
         assert health.details["platform"] == "Test Platform"
@@ -189,16 +187,16 @@ def test_get_registry_health_with_mock_registry(mock_model_registry):
     mock_model_1 = MagicMock()
     mock_model_1.id = "test_model_1"
     mock_model_1.active = True
-    
+
     mock_model_2 = MagicMock()
     mock_model_2.id = "test_model_2"
     mock_model_2.active = True
-    
+
     mock_model_registry.list_models = MagicMock(return_value=[mock_model_1, mock_model_2])
-    
+
     # Get health
     health = get_registry_health(mock_model_registry)
-    
+
     # Verify OK status
     assert health.status == HealthStatus.OK
     assert health.details["model_count"] == 2
@@ -212,10 +210,10 @@ def test_get_registry_health_no_models():
     # Create empty registry
     registry = MagicMock(spec=ModelRegistryService)
     registry.list_models.return_value = []
-    
+
     # Get health
     health = get_registry_health(registry)
-    
+
     # Verify warning status
     assert health.status == HealthStatus.WARNING
     assert health.details["model_count"] == 0
@@ -228,20 +226,20 @@ def test_get_registry_health_inactive_models():
     """Test get_registry_health with inactive models only."""
     # Create registry mock with only inactive models
     registry = MagicMock(spec=ModelRegistryService)
-    
+
     inactive_model1 = MagicMock()
     inactive_model1.id = "inactive_model1"
     inactive_model1.active = False
-    
+
     inactive_model2 = MagicMock()
     inactive_model2.id = "inactive_model2"
     inactive_model2.active = False
-    
+
     registry.list_models.return_value = [inactive_model1, inactive_model2]
-    
+
     # Get health
     health = get_registry_health(registry)
-    
+
     # Verify warning status
     assert health.status == HealthStatus.WARNING
     assert health.details["model_count"] == 2
@@ -255,10 +253,10 @@ def test_get_registry_health_error():
     # Create registry mock that raises an exception
     registry = MagicMock(spec=ModelRegistryService)
     registry.list_models.side_effect = Exception("Test registry error")
-    
+
     # Get health
     health = get_registry_health(registry)
-    
+
     # Verify error status
     assert health.status == HealthStatus.ERROR
     assert "error" in health.details
@@ -273,11 +271,11 @@ def test_update_overall_status_combinations():
     assert update_overall_status(HealthStatus.ERROR, HealthStatus.OK) == HealthStatus.ERROR
     assert update_overall_status(HealthStatus.ERROR, HealthStatus.WARNING) == HealthStatus.ERROR
     assert update_overall_status(HealthStatus.ERROR, HealthStatus.ERROR) == HealthStatus.ERROR
-    
+
     # Warning takes precedence over OK
     assert update_overall_status(HealthStatus.OK, HealthStatus.WARNING) == HealthStatus.WARNING
     assert update_overall_status(HealthStatus.WARNING, HealthStatus.OK) == HealthStatus.WARNING
     assert update_overall_status(HealthStatus.WARNING, HealthStatus.WARNING) == HealthStatus.WARNING
-    
+
     # OK only when both are OK
     assert update_overall_status(HealthStatus.OK, HealthStatus.OK) == HealthStatus.OK

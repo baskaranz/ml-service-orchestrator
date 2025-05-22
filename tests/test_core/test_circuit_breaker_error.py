@@ -1,7 +1,10 @@
 """Test CircuitBreakerError handling."""
-import pytest
+
 import json
+
+import pytest
 from fastapi import Request
+
 from app.core.exceptions import CircuitBreakerError, circuit_breaker_error_handler
 
 
@@ -15,14 +18,11 @@ def mock_request():
 async def test_circuit_breaker_error_handler(mock_request):
     """Test handling of CircuitBreakerError."""
     # Create a test exception
-    exc = CircuitBreakerError(
-        message="Service temporarily unavailable", 
-        model_id="test_model"
-    )
-    
+    exc = CircuitBreakerError(message="Service temporarily unavailable", model_id="test_model")
+
     # Handle the exception
     response = await circuit_breaker_error_handler(mock_request, exc)
-    
+
     # Verify response
     assert response.status_code == 503  # Service Unavailable
     data = json.loads(response.body.decode())

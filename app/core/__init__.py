@@ -1,3 +1,3 @@
-from .circuit_breaker import CircuitBreaker, CircuitState
+from .global_circuit_breaker import CircuitBreaker, CircuitState, global_circuit_breaker
 
-__all__ = ['CircuitBreaker', 'CircuitState']
+__all__ = ["CircuitBreaker", "CircuitState", "global_circuit_breaker"]

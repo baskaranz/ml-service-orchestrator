@@ -1,8 +1,11 @@
 """Test HTTP exception handling."""
-import pytest
+
 import json
+
+import pytest
 from fastapi import Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.core.exceptions import http_error_handler
 
 
@@ -17,10 +20,10 @@ async def test_http_error_handler(mock_request):
     """Test handling of HTTPException."""
     # Create a test exception
     exc = StarletteHTTPException(status_code=400, detail="Test error")
-    
+
     # Handle the exception
     response = await http_error_handler(mock_request, exc)
-    
+
     # Verify response
     assert response.status_code == 400
     data = json.loads(response.body.decode())

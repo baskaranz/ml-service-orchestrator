@@ -2,13 +2,13 @@
 Tests for platform configuration management.
 """
 
+from unittest.mock import mock_open, patch
+
 import pytest
-from unittest.mock import patch, mock_open
-import yaml
-from pathlib import Path
 
 from app.config.platform_config import PlatformConfig
 from app.models.config_models import LLMProviderConfig
+
 
 @pytest.fixture
 def mock_config_yaml() -> str:
@@ -42,6 +42,7 @@ def mock_config_yaml() -> str:
         max_retries: 2
     """
 
+
 @pytest.fixture
 def platform_config(mock_config_yaml: str) -> PlatformConfig:
     """Create a test platform config instance."""
@@ -51,12 +52,14 @@ def platform_config(mock_config_yaml: str) -> PlatformConfig:
                 config = PlatformConfig()
                 return config
 
+
 def test_platform_config_initialization(platform_config: PlatformConfig) -> None:
     """Test platform config initialization."""
     assert platform_config.config_dir == "config/platform"
     assert platform_config._llm_config is not None
     assert isinstance(platform_config._llm_config, LLMProviderConfig)
     assert platform_config._llm_config.type == "ollama"  # Development environment
+
 
 def test_platform_config_load_config(platform_config: PlatformConfig) -> None:
     """Test loading platform configuration."""
@@ -65,6 +68,7 @@ def test_platform_config_load_config(platform_config: PlatformConfig) -> None:
     assert platform_config._llm_config.model_name == "mistral"
     assert platform_config._llm_config.timeout == 30
     assert platform_config._llm_config.max_retries == 3
+
 
 def test_platform_config_get_llm_config(platform_config: PlatformConfig) -> None:
     """Test getting LLM provider configuration."""
@@ -75,11 +79,13 @@ def test_platform_config_get_llm_config(platform_config: PlatformConfig) -> None
     assert llm_config.timeout == 30
     assert llm_config.max_retries == 3
 
+
 def test_platform_config_missing_config_file() -> None:
     """Test handling missing configuration file."""
     with patch("pathlib.Path.exists", return_value=False):
         config = PlatformConfig()
         assert config._llm_config is None
+
 
 def test_platform_config_invalid_yaml() -> None:
     """Test handling invalid YAML configuration."""
@@ -88,9 +94,10 @@ def test_platform_config_invalid_yaml() -> None:
             with pytest.raises(Exception):
                 PlatformConfig()
 
+
 def test_platform_config_missing_llm_provider() -> None:
     """Test handling missing LLM provider configuration."""
     with patch("builtins.open", mock_open(read_data="{}")):
         with patch("pathlib.Path.exists", return_value=True):
             with pytest.raises(Exception):
-                PlatformConfig() 
+                PlatformConfig()

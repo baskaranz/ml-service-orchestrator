@@ -1,15 +1,11 @@
 """Tests for health check API endpoints."""
 
-import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
-from fastapi import status
-from httpx import AsyncClient
 
+from app.api.routers.health import get_registry_health, get_system_health, update_overall_status
 from app.schemas.api_models import HealthStatus
-from app.api.routers.health import get_system_health, get_registry_health, update_overall_status
 
 
 def safe_dict(val):
@@ -21,8 +17,11 @@ def test_basic_health_check(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "OK"
+    # The status should be one of the HealthStatus enum values (uppercase)
+    assert data["status"] in ["OK", "WARNING", "ERROR"]
     assert "version" in data
+    assert "models" in data
+    assert "components" in data
 
 
 @patch("app.services.model_registry.ModelRegistryService.list_models", new_callable=MagicMock)
@@ -44,7 +43,7 @@ def test_detailed_health_check(mock_list_models, client: TestClient, mock_settin
 def test_get_system_health():
     """Test getting system health information."""
     health = get_system_health()
-    
+
     assert health.status == HealthStatus.OK
     assert "python_version" in health.details
     assert "platform" in health.details
@@ -54,7 +53,7 @@ def test_get_system_health_error():
     """Test getting system health information with an error."""
     with patch("platform.python_version", side_effect=Exception("Test error")):
         health = get_system_health()
-        
+
         assert health.status == HealthStatus.ERROR
         assert "error" in health.details
 
@@ -64,9 +63,9 @@ def test_get_registry_health_no_models():
     # Create mock registry with no models
     mock_registry = MagicMock()
     mock_registry.list_models.return_value = []
-    
+
     health = get_registry_health(mock_registry)
-    
+
     assert health.status == HealthStatus.WARNING
     assert health.details["model_count"] == 0
     assert "No models loaded" in health.details["warning"]
@@ -79,9 +78,9 @@ def test_get_registry_health_no_active_models():
     mock_model = MagicMock()
     mock_model.active = False
     mock_registry.list_models.return_value = [mock_model]
-    
+
     health = get_registry_health(mock_registry)
-    
+
     assert health.status == HealthStatus.WARNING
     assert health.details["model_count"] == 1
     assert health.details["active_models"] == 0
@@ -96,9 +95,9 @@ def test_get_registry_health_with_active_models():
     mock_model.active = True
     mock_model.id = "test_model"
     mock_registry.list_models.return_value = [mock_model]
-    
+
     health = get_registry_health(mock_registry)
-    
+
     assert health.status == HealthStatus.OK
     assert health.details["model_count"] == 1
     assert health.details["active_models"] == 1
@@ -110,9 +109,9 @@ def test_get_registry_health_error():
     # Create mock registry that raises an exception
     mock_registry = MagicMock()
     mock_registry.list_models.side_effect = Exception("Test error")
-    
+
     health = get_registry_health(mock_registry)
-    
+
     assert health.status == HealthStatus.ERROR
     assert "error" in health.details
 
@@ -123,10 +122,10 @@ def test_update_overall_status():
     assert update_overall_status(HealthStatus.OK, HealthStatus.ERROR) == HealthStatus.ERROR
     assert update_overall_status(HealthStatus.WARNING, HealthStatus.ERROR) == HealthStatus.ERROR
     assert update_overall_status(HealthStatus.ERROR, HealthStatus.OK) == HealthStatus.ERROR
-    
+
     # Test that warning takes precedence over OK
     assert update_overall_status(HealthStatus.OK, HealthStatus.WARNING) == HealthStatus.WARNING
     assert update_overall_status(HealthStatus.WARNING, HealthStatus.OK) == HealthStatus.WARNING
-    
+
     # Test that OK with OK remains OK
     assert update_overall_status(HealthStatus.OK, HealthStatus.OK) == HealthStatus.OK

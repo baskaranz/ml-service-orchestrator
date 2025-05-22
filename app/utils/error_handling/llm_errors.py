@@ -2,23 +2,23 @@
 LLM-based error handling utilities.
 """
 
-from typing import Any, Dict, Optional, Callable
-import json
-import logging
 import asyncio
+import json
 from datetime import datetime
+from typing import Any, Dict, Optional
 
-from app.utils.llm_providers import get_llm_provider
-from app.utils.error_handling.base import BaseErrorHandler, RetryConfig
-from app.utils.logging import get_logger
-from app.models.config_models import LLMProviderConfig
 from app.config.platform_config import platform_config
+from app.models.config_models import LLMProviderConfig
+from app.utils.error_handling.base import BaseErrorHandler, RetryConfig
+from app.utils.llm_providers import get_llm_provider
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 class LLMErrorClassifier:
     """Classifies errors using LLM to determine retry strategy."""
-    
+
     def __init__(self, config: Optional[LLMProviderConfig] = None):
         """Initialize the error classifier."""
         if config is None:
@@ -27,9 +27,9 @@ class LLMErrorClassifier:
                 model_name="mistralai/Mistral-7B-Instruct-v0.2",
                 timeout=30,
                 max_retries=3,
-                api_key="test-key"  # Default test key for development
+                api_key="test-key",  # Default test key for development
             )
-        
+
         self.llm = get_llm_provider(config)
         self.prompt_template = """
         Analyze this error and classify it:
@@ -50,16 +50,14 @@ class LLMErrorClassifier:
         """
 
     async def classify_error(
-        self,
-        error: Exception,
-        context: Optional[Dict[str, Any]] = None
+        self, error: Exception, context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Classify an error using LLM."""
         try:
             # Extract error details
             error_type = type(error).__name__
             error_message = str(error)
-            
+
             # Build context
             error_context = {
                 "error_type": error_type,
@@ -67,38 +65,38 @@ class LLMErrorClassifier:
                 "status_code": getattr(error, "status_code", None),
                 "model_id": context.get("model_id") if context else None,
                 "retry_count": context.get("retry_count", 0) if context else 0,
-                "max_retries": context.get("max_retries", 3) if context else 3
+                "max_retries": context.get("max_retries", 3) if context else 3,
             }
-            
+
             # Add any additional context
             if context:
                 error_context.update(context)
-            
+
             prompt = self.prompt_template.format(
                 error_type=error_type,
                 error_message=error_message,
-                context=json.dumps(error_context, indent=2)
+                context=json.dumps(error_context, indent=2),
             )
-            
+
             logger.info(f"Classifying error with prompt:\n{prompt}")
-            
+
             response = await self.llm.generate(prompt)
             logger.info(f"LLM response:\n{response}")
-            
+
             # Parse the response to extract classification and reasoning
             lines = response.strip().split("\n")
             classification = None
             reasoning = []
-            
+
             for line in lines:
                 if line.startswith("Classification:"):
                     classification = line.split(":", 1)[1].strip().lower()
                 elif line.startswith("Reasoning:"):
                     reasoning.append(line.split(":", 1)[1].strip())
-            
+
             if not classification:
                 raise ValueError("Could not parse classification from LLM response")
-            
+
             # Normalize classification
             classification = classification.lower()
             if "transient" in classification:
@@ -113,42 +111,37 @@ class LLMErrorClassifier:
                 classification = "input_validation"
             else:
                 classification = "unknown"
-            
+
             result = {
                 "classification": classification,
                 "reasoning": "\n".join(reasoning) if reasoning else None,
                 "timestamp": datetime.utcnow().isoformat(),
-                "context": error_context
+                "context": error_context,
             }
-            
+
             logger.info(f"Error classification result: {json.dumps(result, indent=2)}")
             return result
-        
+
         except Exception as e:
             logger.error(f"Error in LLM classification: {str(e)}")
             return {
                 "classification": "unknown",
                 "reasoning": f"Error in classification: {str(e)}",
                 "timestamp": datetime.utcnow().isoformat(),
-                "context": context or {}
+                "context": context or {},
             }
+
 
 class SmartRetryHandler(BaseErrorHandler):
     """Smart retry handler that uses LLM for error classification."""
-    
-    def __init__(
-        self,
-        retry_config: RetryConfig,
-        llm_config: Optional[LLMProviderConfig] = None
-    ):
+
+    def __init__(self, retry_config: RetryConfig, llm_config: Optional[LLMProviderConfig] = None):
         """Initialize the smart retry handler."""
         super().__init__(retry_config)
         self.error_classifier = LLMErrorClassifier(llm_config)
-    
+
     async def should_retry(
-        self,
-        error: Exception,
-        context: Optional[Dict[str, Any]] = None
+        self, error: Exception, context: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Determine if an error should be retried using LLM classification."""
         # Check if max retries reached
@@ -157,7 +150,7 @@ class SmartRetryHandler(BaseErrorHandler):
             return False
 
         classification = await self.error_classifier.classify_error(error, context)
-        
+
         if classification["classification"] == "transient":
             self.increment_retry_count()
             return True
@@ -173,4 +166,4 @@ class SmartRetryHandler(BaseErrorHandler):
                 f"Not retrying error: {classification['classification']}\n"
                 f"Reasoning: {classification['reasoning']}"
             )
-            return False 
+            return False

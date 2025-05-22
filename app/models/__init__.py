@@ -1,1 +1,1 @@
-# Models package for Pydantic and DB models 
+# Models package for Pydantic and DB models

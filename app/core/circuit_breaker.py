@@ -2,30 +2,34 @@
 Base circuit breaker implementation.
 """
 
-from abc import ABC, abstractmethod
 import time
-from typing import Any, Callable, Dict, Optional
+from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Any, Callable, Dict, Optional
+
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 class CircuitState(Enum):
     """Circuit breaker states."""
+
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
 
+
 class CircuitBreaker(ABC):
     """Base class for circuit breaker implementations."""
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
         reset_timeout: float = 60.0,
         half_open_timeout: float = 30.0,
         success_threshold: int = 2,
-        model_id: Optional[str] = None
+        model_id: Optional[str] = None,
     ):
         self.failure_threshold = failure_threshold
         self.reset_timeout = reset_timeout
@@ -41,10 +45,10 @@ class CircuitBreaker(ABC):
     def _can_execute(self) -> bool:
         """Check if the circuit breaker allows execution."""
         current_time = time.time()
-        
+
         if self.state == CircuitState.CLOSED:
             return True
-            
+
         if self.state == CircuitState.OPEN:
             if current_time - self._last_state_change >= self.reset_timeout:
                 self.state = CircuitState.HALF_OPEN
@@ -52,14 +56,14 @@ class CircuitBreaker(ABC):
                 self.success_count = 0
                 return True
             return False
-            
+
         if self.state == CircuitState.HALF_OPEN:
             return True
-            
+
             if current_time - self._last_state_change >= self.half_open_timeout:
                 return True
             return False
-            
+
         return False
 
     def _record_success(self):
@@ -78,7 +82,7 @@ class CircuitBreaker(ABC):
         """Record a failed execution."""
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         if self.failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             self._last_state_change = time.time()
@@ -95,7 +99,7 @@ class CircuitBreaker(ABC):
             "failure_threshold": self.failure_threshold,
             "reset_timeout": self.reset_timeout,
             "half_open_timeout": self.half_open_timeout,
-            "success_threshold": self.success_threshold
+            "success_threshold": self.success_threshold,
         }
 
     @abstractmethod
@@ -103,19 +107,22 @@ class CircuitBreaker(ABC):
         """Execute the function with circuit breaker protection."""
         pass
 
+
 class BasicCircuitBreaker(CircuitBreaker):
     """Basic circuit breaker implementation."""
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
         reset_timeout: float = 60.0,
         half_open_timeout: float = 30.0,
         success_threshold: int = 2,
-        model_id: Optional[str] = None
+        model_id: Optional[str] = None,
     ):
-        super().__init__(failure_threshold, reset_timeout, half_open_timeout, success_threshold, model_id)
-    
+        super().__init__(
+            failure_threshold, reset_timeout, half_open_timeout, success_threshold, model_id
+        )
+
     def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute the function with basic circuit breaker protection."""
         if not self._can_execute():
@@ -130,9 +137,10 @@ class BasicCircuitBreaker(CircuitBreaker):
             self._record_failure()
             raise e
 
+
 class LLMCircuitBreaker(CircuitBreaker):
     """LLM-based circuit breaker implementation."""
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
@@ -144,9 +152,11 @@ class LLMCircuitBreaker(CircuitBreaker):
         max_timeout: float = 300.0,
         min_timeout: float = 30.0,
         error_types: Optional[Dict[str, Dict[str, float]]] = None,
-        model_id: Optional[str] = None
+        model_id: Optional[str] = None,
     ):
-        super().__init__(failure_threshold, reset_timeout, half_open_timeout, success_threshold, model_id)
+        super().__init__(
+            failure_threshold, reset_timeout, half_open_timeout, success_threshold, model_id
+        )
         self.max_threshold = max_threshold
         self.min_threshold = min_threshold
         self.max_timeout = max_timeout
@@ -161,22 +171,18 @@ class LLMCircuitBreaker(CircuitBreaker):
             self.failure_threshold = min(
                 self.max_threshold,
                 max(
-                    self.min_threshold,
-                    int(self.failure_threshold * config["threshold_multiplier"])
-                )
+                    self.min_threshold, int(self.failure_threshold * config["threshold_multiplier"])
+                ),
             )
             self.reset_timeout = min(
                 self.max_timeout,
-                max(
-                    self.min_timeout,
-                    self.reset_timeout * config["timeout_multiplier"]
-                )
+                max(self.min_timeout, self.reset_timeout * config["timeout_multiplier"]),
             )
 
     def _classify_error(self, error: Exception) -> str:
         """Classify the error type."""
         error_str = str(error).lower()
-        
+
         if "rate limit" in error_str or "too many requests" in error_str:
             return "rate_limit"
         elif "timeout" in error_str or "timed out" in error_str:
@@ -205,11 +211,13 @@ class LLMCircuitBreaker(CircuitBreaker):
     def get_state(self) -> Dict[str, Any]:
         """Get the current state of the LLM circuit breaker."""
         state = super().get_state()
-        state.update({
-            "max_threshold": self.max_threshold,
-            "min_threshold": self.min_threshold,
-            "max_timeout": self.max_timeout,
-            "min_timeout": self.min_timeout,
-            "error_counts": self._error_counts
-        })
-        return state 
+        state.update(
+            {
+                "max_threshold": self.max_threshold,
+                "min_threshold": self.min_threshold,
+                "max_timeout": self.max_timeout,
+                "min_timeout": self.min_timeout,
+                "error_counts": self._error_counts,
+            }
+        )
+        return state

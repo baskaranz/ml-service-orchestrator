@@ -1,1 +1,1 @@
-# Schemas package for API request/response models 
+# Schemas package for API request/response models

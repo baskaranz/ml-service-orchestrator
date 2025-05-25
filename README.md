@@ -1,13 +1,17 @@
 # ML Service Orchestrator
 
-A high-performance, production-ready FastAPI service for orchestrating and managing multiple ML model predictions with built-in fault tolerance, health monitoring, and dynamic model registration.
+A high-performance, production-ready FastAPI service for orchestrating and managing multiple ML model predictions with built-in fault tolerance, circuit breakers, health monitoring, and dynamic model registration.
+
+> **Latest Update (May 2024)**: Enhanced circuit breaker implementation with improved error handling and test coverage. Added support for dynamic model registration and health checks.
 
 ## 🌟 Features
 
 - **Model Agnostic**: Support for any ML model with a REST API
 - **Dynamic Model Registration**: Register and unregister models at runtime
 - **Health Monitoring**: Built-in health checks and circuit breakers
-- **Error Handling**: Comprehensive error handling with retry mechanisms
+- **Circuit Breakers**: Intelligent circuit breaking with configurable thresholds and timeouts
+- **Error Handling**: Comprehensive error handling with retry mechanisms and fallback strategies
+- **Testing**: Comprehensive test suite with 90%+ code coverage
 - **API Documentation**: Full OpenAPI/Swagger documentation
 - **Containerized**: Ready for Docker and Kubernetes deployment
 - **Secure**: API key authentication and request validation
@@ -52,12 +56,42 @@ A high-performance, production-ready FastAPI service for orchestrating and manag
 The orchestrator service runs in Docker and automatically discovers models configured in the environment-specific directory (e.g., `config/local/models/` for local development).
 
 ```bash
-# Start the orchestrator service
-./scripts/start_orchestrator.sh
+# Clone the repository (if not already cloned)
+git clone https://github.com/baskaranz/ml-service-orchestrator.git
+cd ml-service-orchestrator
 
-# Or run directly with Docker Compose
+# Start the orchestrator service with Docker Compose
 docker-compose up -d orchestrator
+
+# Or for development with hot-reload
+source .venv/bin/activate
+uvicorn app.main:app --reload
 ```
+
+### Development Setup
+
+1. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+2. Install development dependencies:
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+3. Run tests:
+   ```bash
+   # Run all tests
+   pytest
+   
+   # Run tests with coverage
+   pytest --cov=app --cov-report=term-missing
+   
+   # Run a specific test file
+   pytest tests/test_core/test_orchestrator.py -v
+   ```
 
 ### 2. Run Mock Models (for Testing)
 
@@ -75,10 +109,10 @@ Or use the scripts directly:
 
 ```bash
 # Start mock model 1 on port 8001
-./scripts/mocks/start_mock_model.sh mock-model-1 8001
+./scripts/start_mock_model.sh mock-model-1 8001
 
 # Start mock model 2 on port 8002
-./scripts/mocks/start_mock_model.sh mock-model-2 8002
+./scripts/start_mock_model.sh mock-model-2 8002
 ```
 
 ### 3. Configure Docker Networking
@@ -152,12 +186,46 @@ curl -X 'GET' \
 
 ### Model Registration
 
-Models can be registered in two ways:
+Models can be registered in multiple ways:
 
 1. **YAML Configuration Files** (Recommended for production)
    - Place model configs in the environment-specific directory (e.g., `config/local/models/` for local development)
    - Automatically loaded at startup
    - Supports hot-reloading with `POST /refresh` endpoint
+   - Example YAML structure:
+     ```yaml
+     id: sentiment-analyzer
+     name: Sentiment Analysis Model
+     endpoint_url: http://mock-model-1:8000
+     active: true
+     timeout: 30.0
+     
+     # Circuit breaker configuration
+     circuit_breaker:
+       failure_threshold: 5
+       reset_timeout: 60
+       half_open_timeout: 30
+       success_threshold: 2
+     
+     # Health check configuration
+     health_check:
+       endpoint: /health
+       interval: 30
+       timeout: 5
+       failure_threshold: 3
+     ```
+
+2. **Environment Variables**
+   - Set `MODEL_CONFIG_DIR` to specify custom model config directory
+   - Example: `export MODEL_CONFIG_DIR=config/local/models`
+
+3. **Docker Environment**
+   - Mount model configs as volumes in Docker
+   - Example in docker-compose.yml:
+     ```yaml
+     volumes:
+       - ./config/local/models:/app/config/local/models
+     ```
 
 2. **API Registration** (For dynamic environments)
    - Register models at runtime via API
@@ -180,7 +248,7 @@ platform:
   config:
     timeout: 30  # seconds
     max_retries: 3
-    
+
     # Health check configuration
     health_check:
       enabled: true
@@ -188,7 +256,7 @@ platform:
       interval: 30
       timeout: 5
       failure_threshold: 3
-      
+
     # Circuit breaker settings
     circuit_breaker:
       enabled: true

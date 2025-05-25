@@ -388,9 +388,9 @@ async def test_proxy_request_circuit_breaker_open(
     mock_circuit_breaker.failure_count = 10
     mock_circuit_breaker.model_id = mock_model_config.id  # Add model_id to match actual circuit breaker
     
-    # Mock the execute_with_circuit_breaker method to raise a CircuitBreakerError
+    # Mock the circuit breaker's execute_async method to raise a CircuitBreakerError
     # This simulates what happens when the circuit breaker is open
-    async def mock_execute_with_circuit_breaker(model_config, func):
+    async def mock_execute_async(func):
         raise CircuitBreakerError(
             "Circuit breaker is open",
             model_id=mock_model_config.id
@@ -406,13 +406,15 @@ async def test_proxy_request_circuit_breaker_open(
     # Mock the error handler to pass through the error
     mock_error_handler = MagicMock()
     mock_error_handler.process_response = AsyncMock(side_effect=lambda x: x)
+    
+    # Configure the circuit breaker's execute_async method
+    mock_circuit_breaker.execute_async = mock_execute_async
 
     # Mock the circuit breaker and HTTP client methods
     with (
         patch.object(orchestrator, "_get_http_client", return_value=mock_http_client) as mock_get_client,
         patch.object(orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker) as mock_get_cb,
         patch.object(orchestrator, "_get_error_handler", return_value=mock_error_handler) as mock_get_error_handler,
-        patch.object(orchestrator, "execute_with_circuit_breaker", side_effect=mock_execute_with_circuit_breaker) as mock_execute_with_cb,
     ):
         # Call the method under test and expect a ModelRequestError
         with pytest.raises(ModelRequestError) as exc_info:
@@ -421,9 +423,6 @@ async def test_proxy_request_circuit_breaker_open(
                 mock_request, 
                 path_suffix="predict"
             )
-
-        # Verify the execute_with_circuit_breaker method was called
-        mock_execute_with_cb.assert_called_once()
         
         # The HTTP client and its getter should not be called when circuit is open
         mock_get_client.assert_not_called()

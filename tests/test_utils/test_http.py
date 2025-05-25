@@ -4,12 +4,7 @@ import httpx
 import pytest
 
 from app.core.exceptions import ModelRequestError
-from app.utils.http import (
-    build_url,
-    create_httpx_client,
-    handle_request_error,
-    make_request,
-)
+from app.utils.http import build_url, create_httpx_client, handle_request_error, make_request
 
 
 def test_build_url():

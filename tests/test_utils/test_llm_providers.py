@@ -7,11 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.config_models import LLMProviderConfig
-from app.utils.llm_providers import (
-    HuggingFaceProvider,
-    OllamaProvider,
-    get_llm_provider,
-)
+from app.utils.llm_providers import HuggingFaceProvider, OllamaProvider, get_llm_provider
 
 
 @pytest.fixture

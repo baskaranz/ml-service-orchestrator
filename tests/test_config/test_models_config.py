@@ -16,10 +16,7 @@ from pydantic import ValidationError
 
 from app.config.models_config import ModelConfigManager
 from app.core.exceptions import ModelNotFoundError
-from app.models.config_models import (
-    ModelConfig,
-    ModelRegistry,
-)
+from app.models.config_models import ModelConfig, ModelRegistry
 
 
 @pytest.fixture

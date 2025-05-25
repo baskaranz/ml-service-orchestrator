@@ -20,7 +20,7 @@ DOCKER_COMPOSE = docker-compose
 DOCKER_COMPOSE_FILE = docker-compose.yml
 DOCKER_IMAGE = ml-orchestrator
 DOCKER_TAG = latest
-DOCKER_REGISTRY ?= 
+DOCKER_REGISTRY ?=
 
 # Help message
 help:

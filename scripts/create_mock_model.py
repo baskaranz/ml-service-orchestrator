@@ -7,13 +7,15 @@ Usage:
 """
 
 import argparse
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Template for model_server.py
@@ -186,10 +188,11 @@ export PORT={host_port}
 python model_server.py
 """
 
+
 def create_mock_model(name, port, version, output_dir=None):
     """
     Create files for a mock model.
-    
+
     Args:
         name: Name of the mock model
         port: Port to run the mock model on
@@ -198,66 +201,63 @@ def create_mock_model(name, port, version, output_dir=None):
     """
     if output_dir is None:
         output_dir = f"./mock-models/{name}"
-    
+
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     # Create model_server.py
     with open(output_path / "model_server.py", "w") as f:
         f.write(MODEL_SERVER_TEMPLATE.strip())
-    
+
     # Create requirements.txt
     with open(output_path / "requirements.txt", "w") as f:
         f.write(REQUIREMENTS_TEMPLATE.strip())
-    
+
     # Create Dockerfile
     with open(output_path / "Dockerfile", "w") as f:
         f.write(DOCKERFILE_TEMPLATE.strip())
-    
+
     # Create docker-compose.yml
     with open(output_path / "docker-compose.yml", "w") as f:
-        f.write(DOCKER_COMPOSE_TEMPLATE.strip().format(
-            model_name=name,
-            host_port=port,
-            version=version
-        ))
-    
+        f.write(
+            DOCKER_COMPOSE_TEMPLATE.strip().format(model_name=name, host_port=port, version=version)
+        )
+
     # Create run script
     run_script_path = output_path / "run.sh"
     with open(run_script_path, "w") as f:
-        f.write(RUN_SCRIPT_TEMPLATE.strip().format(
-            model_name=name,
-            host_port=port,
-            version=version
-        ))
-    
+        f.write(
+            RUN_SCRIPT_TEMPLATE.strip().format(model_name=name, host_port=port, version=version)
+        )
+
     # Make run script executable
     os.chmod(run_script_path, 0o755)
-    
+
     # Create model configuration directory
     config_dir = output_path / "config" / "local" / "models"
     config_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create model configuration file for localhost access
     with open(config_dir / f"{name}.yaml", "w") as f:
-        f.write(MODEL_CONFIG_TEMPLATE.strip().format(
-            model_name=name,
-            version=version,
-            endpoint_url=f"http://localhost:{port}"
-        ))
-    
+        f.write(
+            MODEL_CONFIG_TEMPLATE.strip().format(
+                model_name=name, version=version, endpoint_url=f"http://localhost:{port}"
+            )
+        )
+
     # Create model configuration file for container-to-container access
     with open(config_dir / f"{name}-docker.yaml", "w") as f:
-        f.write(MODEL_CONFIG_TEMPLATE.strip().format(
-            model_name=name,
-            version=version,
-            endpoint_url=f"http://{name}:8000"
-        ))
-    
+        f.write(
+            MODEL_CONFIG_TEMPLATE.strip().format(
+                model_name=name, version=version, endpoint_url=f"http://{name}:8000"
+            )
+        )
+
     logger.info(f"Created mock model {name} in {output_path}")
     logger.info(f"To run with Docker: cd {output_path} && docker-compose up -d")
     logger.info(f"To run with Python: cd {output_path} && ./run.sh")
     logger.info(f"Model configuration files created in {config_dir}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Create a mock model for testing")
@@ -265,12 +265,13 @@ def main():
     parser.add_argument("--port", type=int, default=8003, help="Port to run the mock model on")
     parser.add_argument("--version", default="1.0.0", help="Version of the mock model")
     parser.add_argument("--output-dir", help="Directory to create files in")
-    
+
     args = parser.parse_args()
-    
+
     create_mock_model(args.name, args.port, args.version, args.output_dir)
-    
+
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

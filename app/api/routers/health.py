@@ -19,7 +19,7 @@ router = APIRouter(tags=["health"])
 
 
 @router.get(
-    "/health",
+    "/",
     response_model=HealthResponse,
     summary="Basic health check",
     description="Returns the basic health status of the service",
@@ -65,7 +65,7 @@ async def health_check() -> HealthResponse:
 
 
 @router.get(
-    "/health/details",
+    "/details",
     response_model=HealthResponse,
     summary="Detailed health check",
     description="Returns detailed health information for all components",
@@ -111,7 +111,7 @@ async def detailed_health_check(
 
 
 @router.get(
-    "/health/models/{model_id}",
+    "/models/{model_id}",
     response_model=HealthResponse,
     summary="Model health check",
     description="Returns the health status of a specific model",

@@ -269,14 +269,14 @@ class Orchestrator:
         self, model_config: ModelConfig, func: Callable[[], Awaitable[Any]]
     ) -> Any:
         """Execute a function with circuit breaker protection.
-        
+
         Args:
             model_config: The model configuration
             func: The async function to execute
-            
+
         Returns:
             The result of the function execution
-            
+
         Raises:
             CircuitBreakerError: If the circuit breaker is open
             Exception: Any exception raised by the function
@@ -338,8 +338,12 @@ class Orchestrator:
                         json_data = await request.json()
                         if json_data:  # Only add json parameter if there's actual data
                             # Convert 'data' key to 'input' key for mock models
-                            if isinstance(json_data, dict) and 'data' in json_data and 'input' not in json_data:
-                                json_data['input'] = json_data.pop('data')
+                            if (
+                                isinstance(json_data, dict)
+                                and "data" in json_data
+                                and "input" not in json_data
+                            ):
+                                json_data["input"] = json_data.pop("data")
                             request_args["json"] = json_data
                     except json.JSONDecodeError:
                         # If JSON parsing fails, fall back to raw body
@@ -370,9 +374,7 @@ class Orchestrator:
             # Handle tuple response (status_code, content, headers) from http_client.request()
             if isinstance(response, tuple) and len(response) == 3:
                 status_code, content, headers = response
-                logger.debug(
-                    f"Received tuple response - Status: {status_code}, Content: {content}"
-                )
+                logger.debug(f"Received tuple response - Status: {status_code}, Content: {content}")
                 return {
                     "status_code": status_code,
                     "content": content,
@@ -414,7 +416,7 @@ class Orchestrator:
 
             # Process the response through the error handler
             error_handler = self._get_error_handler(model_config)
-            
+
             # Return the response directly since we already have it in the correct format
             return response
 
@@ -599,54 +601,52 @@ class Orchestrator:
 
         # Get the circuit breaker for this model
         circuit_breaker = self.get_circuit_breaker(model_config)
-        
+
         # Execute the request with circuit breaker protection
         try:
             # Use the circuit breaker's execute_async method to handle the request
             # The mock in the test provides a side effect that executes the function
             response = await circuit_breaker.execute_async(_execute_request)
-            
+
             # Record success with circuit breaker if method exists
-            if hasattr(circuit_breaker, 'record_success'):
+            if hasattr(circuit_breaker, "record_success"):
                 circuit_breaker.record_success()
-            
+
             # For successful responses, return the response as is without processing
             # through the error handler (as per test expectations)
             if isinstance(response, dict) and "status_code" in response:
                 return response
-                
+
             # If the response is not in the expected format, wrap it
-            return {
-                "status_code": 200,
-                "content": response,
-                "headers": {}
-            }
-            
+            return {"status_code": 200, "content": response, "headers": {}}
+
         except CircuitBreakerError as e:
             logger.error(f"Circuit breaker is open for model {model_id}: {str(e)}")
             # Record failure with circuit breaker if method exists
-            if hasattr(circuit_breaker, 'record_failure'):
+            if hasattr(circuit_breaker, "record_failure"):
                 circuit_breaker.record_failure()
-                
+
             # Convert CircuitBreakerError to ModelRequestError with expected message format
             raise ModelRequestError(
                 f"Failed to proxy request to model: {str(e)}",
                 status_code=500,
                 model_id=model_id,
             ) from e
-            
+
         except ModelRequestError as e:
             # Record failure with circuit breaker for model errors if method exists
-            if hasattr(circuit_breaker, 'record_failure'):
+            if hasattr(circuit_breaker, "record_failure"):
                 circuit_breaker.record_failure()
             raise
-            
+
         except Exception as e:
-            logger.error(f"Unexpected error in proxy_request for model {model_id}: {str(e)}", exc_info=True)
+            logger.error(
+                f"Unexpected error in proxy_request for model {model_id}: {str(e)}", exc_info=True
+            )
             # Record failure with circuit breaker for unexpected errors if method exists
-            if hasattr(circuit_breaker, 'record_failure'):
+            if hasattr(circuit_breaker, "record_failure"):
                 circuit_breaker.record_failure()
-                
+
             raise ModelRequestError(
                 f"Failed to process request: {str(e)}",
                 status_code=500,

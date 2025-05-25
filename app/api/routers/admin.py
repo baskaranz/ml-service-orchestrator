@@ -15,7 +15,7 @@ from app.utils.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(
-    prefix="/admin",
+    prefix="/manage",
     tags=["admin"],
     dependencies=[Depends(get_api_key)],
     responses={403: {"description": "Not authorized"}},

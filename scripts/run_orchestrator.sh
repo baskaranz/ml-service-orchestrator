@@ -30,7 +30,7 @@ fi
 # Check if image exists
 if ! docker image inspect ${IMAGE_NAME}:${IMAGE_VERSION} &> /dev/null; then
     echo "Image ${IMAGE_NAME}:${IMAGE_VERSION} not found locally."
-    
+
     # Check if tar file exists in lib/dist directory
     if [ -f "${DIST_DIR}/${IMAGE_NAME}-${IMAGE_VERSION}.tar.gz" ]; then
         echo "Found compressed image file in ${DIST_DIR}. Loading..."
@@ -104,7 +104,7 @@ RUN_MOCKS=${RUN_MOCKS:-n}
 if [[ "$RUN_MOCKS" =~ ^[Yy]$ ]]; then
     # Run mock models
     echo "\nStarting mock models for testing purposes..."
-    
+
     # Check if mock models are already running
     if docker ps | grep -q "mock-model-1"; then
         echo "Mock models are already running."
@@ -118,7 +118,7 @@ if [[ "$RUN_MOCKS" =~ ^[Yy]$ ]]; then
             -e PORT=8000 \
             ${IMAGE_NAME}:${IMAGE_VERSION} \
             sh -c "python -m app.mocks.model_mock"
-            
+
         # Run mock-model-2
         docker run -d --name mock-model-2 \
             --network ml-network \
@@ -128,9 +128,9 @@ if [[ "$RUN_MOCKS" =~ ^[Yy]$ ]]; then
             -e PORT=8000 \
             ${IMAGE_NAME}:${IMAGE_VERSION} \
             sh -c "python -m app.mocks.model_mock"
-            
+
         echo "Mock models started on ports 8001 and 8002."
-        
+
         # Configure for container-to-container communication
         if [ -f "./scripts/configure_models_docker.sh" ]; then
             echo "Configuring models for container-to-container communication..."

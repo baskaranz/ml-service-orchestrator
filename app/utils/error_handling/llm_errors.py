@@ -36,14 +36,14 @@ class LLMErrorClassifier:
         Error Type: {error_type}
         Error Message: {error_message}
         Context: {context}
-        
+
         Classify this error as one of:
         1. Transient (should retry) - Temporary issues like network timeouts, server overload
         2. Permanent (should not retry) - Issues that won't be resolved by retrying
         3. Rate Limit (should retry with backoff) - API rate limits or quota exceeded
         4. Authentication (should not retry) - Invalid credentials or permissions
         5. Input Validation (should not retry) - Invalid input data or parameters
-        
+
         Provide your classification and reasoning in this format:
         Classification: <one of the above categories>
         Reasoning: <explanation for the classification>

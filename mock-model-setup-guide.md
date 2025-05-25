@@ -1,19 +1,257 @@
 # Mock Model Setup Guide
 
-This guide explains how to create and configure mock models for the ML Service Orchestrator.
+This guide explains how to create, configure, and test mock models for the ML Service Orchestrator. It includes all necessary API endpoints for testing and integration.
 
 ## Table of Contents
 
-1. [Creating the Mock Model Service](#creating-the-mock-model-service)
+1. [Prerequisites](#prerequisites)
+2. [Cleanup Existing Containers](#cleanup-existing-containers)
+3. [Setting Up Mock Model Services](#setting-up-mock-model-services)
    - [Using Docker (Recommended)](#option-1-using-docker-recommended)
    - [Running Directly with Python](#option-2-running-directly-with-python)
-2. [Creating the Model Configuration](#creating-the-model-configuration-for-the-orchestrator)
-3. [Testing the Integration](#testing-the-integration)
+4. [Testing API Endpoints](#testing-api-endpoints)
+   - [Model Management](#model-management)
+   - [Health Checks](#health-checks)
+   - [Making Predictions](#making-predictions)
+   - [Admin Endpoints](#admin-endpoints)
 4. [Troubleshooting](#troubleshooting)
+5. [Cleanup](#cleanup)
 
-## Creating the Mock Model Service
+## Setting Up Mock Model Services
 
-The mock model service is a simple FastAPI application that simulates an ML model API. Here's how to set it up:
+### Option 1: Using Docker (Recommended)
+
+1. Create a new directory for the mock model service:
+   ```bash
+   mkdir -p mock-model
+   cd mock-model
+   ```
+
+2. Create the following files in the `mock-model` directory:
+
+   `model_server.py`:
+   ```python
+   from fastapi import FastAPI, HTTPException
+   from fastapi.middleware.cors import CORSMiddleware
+   from pydantic import BaseModel
+   import uvicorn
+   import os
+   import logging
+
+   app = FastAPI()
+
+   # Configure logging
+   logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+   logger = logging.getLogger(__name__)
+
+   # CORS middleware
+   app.add_middleware(
+       CORSMiddleware,
+       allow_origins=["*"],
+       allow_credentials=True,
+       allow_methods=["*"],
+       allow_headers=["*"],
+   )
+
+   class HealthResponse(BaseModel):
+       status: str = "ok"
+       model: str
+       version: str
+
+   class PredictionRequest(BaseModel):
+       input: str
+
+   class PredictionResponse(BaseModel):
+       output: str
+       model: str
+
+   @app.get("/health", response_model=HealthResponse)
+   async def health_check():
+       return {
+           "status": "ok",
+           "model": os.getenv("MODEL_NAME", "mock-model"),
+           "version": os.getenv("MODEL_VERSION", "1.0.0")
+       }
+
+   @app.post("/predict", response_model=PredictionResponse)
+   async def predict(request: PredictionRequest):
+       return {
+           "output": f"Processed by {os.getenv('MODEL_NAME')}: {request.input}",
+           "model": os.getenv("MODEL_NAME", "mock-model")
+       }
+
+   if __name__ == "__main__":
+       port = int(os.getenv("PORT", 8000))
+       logger.info(f"Starting mock model server on port {port}")
+       uvicorn.run(app, host="0.0.0.0", port=port)
+   ```
+
+   `requirements.txt`:
+   ```
+   fastapi==0.95.1
+   uvicorn==0.22.0
+   pydantic==1.10.7
+   ```
+
+   `Dockerfile`:
+   ```dockerfile
+   FROM python:3.11-slim
+
+   WORKDIR /app
+
+   # Install system dependencies including curl for health checks
+   RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+       rm -rf /var/lib/apt/lists/*
+
+   # Copy requirements and install dependencies
+   COPY requirements.txt .
+   RUN pip install --no-cache-dir -r requirements.txt requests
+
+   # Copy mock model server
+   COPY model_server.py .
+
+   # Create config directory
+   RUN mkdir -p /app/config/models
+
+   # Set default environment variables
+   ENV PORT=8000
+   ENV MODEL_NAME=mock-model
+   ENV MODEL_VERSION=1.0.0
+   ENV LOG_LEVEL=INFO
+
+   # Expose the port the app runs on
+   EXPOSE ${PORT}
+
+   # Run the application
+   CMD exec uvicorn model_server:app --host 0.0.0.0 --port $PORT
+   ```
+
+3. Build and run two mock model services:
+   ```bash
+   # Build the Docker image
+   docker build -t mock-model:latest .
+
+   # Create a Docker network if it doesn't exist
+   docker network create ml-network || true
+
+   # Run the first mock model service
+   docker run -d \
+     --network ml-network \
+     -p 9001:8000 \
+     -e MODEL_NAME=mock-model-1 \
+     -e MODEL_VERSION=1.0.0 \
+     --name mock-model-1 \
+     mock-model:latest
+
+   # Run the second mock model service
+   docker run -d \
+     --network ml-network \
+     -p 9002:8000 \
+     -e MODEL_NAME=mock-model-2 \
+     -e MODEL_VERSION=1.0.0 \
+     --name mock-model-2 \
+     mock-model:latest
+   ```
+
+## Testing API Endpoints
+
+### Model Management
+
+1. **List all available models**:
+   ```bash
+   curl -s http://localhost:8000/api/v1/orchestrator/models | jq
+   ```
+
+2. **Get model information**:
+   ```bash
+   curl -s http://localhost:8000/api/v1/orchestrator/models/mock-model-1/info | jq
+   ```
+
+3. **Get model health status**:
+   ```bash
+   curl -s http://localhost:8000/api/v1/orchestrator/models/mock-model-1/health | jq
+   ```
+
+4. **Get model configuration**:
+   ```bash
+   curl -s http://localhost:8000/api/v1/orchestrator/models/mock-model-1/config | jq
+   ```
+
+5. **Refresh model registry**:
+   ```bash
+   curl -X 'POST' 'http://localhost:8000/api/v1/orchestrator/refresh' | jq
+   ```
+
+### Health Checks
+
+1. **Basic health check**:
+   ```bash
+   curl -s http://localhost:8000/health | jq
+   ```
+
+2. **Detailed health check**:
+   ```bash
+   curl -s http://localhost:8000/health/details | jq
+   ```
+
+3. **Model-specific health check**:
+   ```bash
+   curl -s http://localhost:8000/health/models/mock-model-1 | jq
+   ```
+
+### Making Predictions
+
+1. **Make a prediction**:
+   ```bash
+   curl -X 'POST' 'http://localhost:8000/api/v1/orchestrator/models/mock-model-1' \
+     -H 'Content-Type: application/json' \
+     -d '{"input": "Test input"}' | jq
+   ```
+
+### Admin Endpoints
+
+1. **List all models (admin)**:
+   ```bash
+   curl -s http://localhost:8000/admin/models | jq
+   ```
+
+2. **Get model details (admin)**:
+   ```bash
+   curl -s http://localhost:8000/admin/models/mock-model-1 | jq
+   ```
+
+## Troubleshooting
+
+1. **Check container logs**:
+   ```bash
+   docker logs mock-model-1
+   ```
+
+2. **Check if containers are running**:
+   ```bash
+   docker ps
+   ```
+
+3. **Common issues**:
+   - **404 Not Found**: Verify the model ID is correct and registered
+   - **500 Internal Server Error**: Check the orchestrator logs
+   - **Connection refused**: Ensure the model service is running and accessible
+
+## Cleanup
+
+To stop and remove all containers:
+
+```bash
+# Stop and remove any existing containers
+docker stop mock-model-1 mock-model-2 2>/dev/null || true
+docker rm mock-model-1 mock-model-2 2>/dev/null || true
+
+# Remove the Docker network if it exists
+docker network rm ml-network 2>/dev/null || true
+
+# Verify cleanup
+docker ps -a | grep mock-model || echo "No mock model containers found"
+```
 
 ### Option 1: Using Docker (Recommended)
 
@@ -173,32 +411,73 @@ Create the `model_server.py` file with the same content as shown in Option 1, St
 MODEL_NAME=mock-model-1 MODEL_VERSION=1.0.0 PORT=8003 python model_server.py
 ```
 
-## Creating the Model Configuration for the Orchestrator
+## Registering Models with the Orchestrator
 
-To configure the orchestrator to use your mock model, you need to create a YAML configuration file:
+To register your mock models with the orchestrator, use the admin API to configure each model:
 
-#### Step 1: Create a directory for model configurations
+#### Register mock-model-1
 
 ```bash
-mkdir -p config/local/models
+curl -X PUT http://localhost:8000/admin/admin/models/mock-model-1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": {
+      "id": "mock-model-1",
+      "name": "Mock Model 1",
+      "endpoint_url": "http://host.docker.internal:9001",
+      "active": true,
+      "timeout": 10.0,
+      "max_retries": 3,
+      "health_check": {
+        "enabled": true,
+        "endpoint": "/health",
+        "interval": 30,
+        "timeout": 3,
+        "failure_threshold": 3,
+        "success_threshold": 2
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  }' | jq
 ```
 
-#### Step 2: Create the model configuration file
+#### Register mock-model-2
 
-Create a file `config/local/models/mock-model-1.yaml` with:
+```bash
+curl -X PUT http://localhost:8000/admin/admin/models/mock-model-2 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": {
+      "id": "mock-model-2",
+      "name": "Mock Model 2",
+      "endpoint_url": "http://host.docker.internal:9002",
+      "active": true,
+      "timeout": 10.0,
+      "max_retries": 3,
+      "health_check": {
+        "enabled": true,
+        "endpoint": "/health",
+        "interval": 30,
+        "timeout": 3,
+        "failure_threshold": 3,
+        "success_threshold": 2
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  }' | jq
+```
 
-```yaml
-# Mock Model 1 Configuration
-name: mock-model-1
-version: 1.0.0
-endpoint_url: http://localhost:8003  # If running on same machine
-# endpoint_url: http://mock-model-1:8000  # If using Docker Compose with container-to-container communication
-type: rest
-active: true
-health_check:
-  enabled: true
-  endpoint: /health
-  interval_seconds: 30
+#### Reload the Orchestrator Configuration
+
+After registering or updating models, reload the orchestrator to apply changes:
+
+```bash
+curl -X POST http://localhost:8000/admin/admin/reload
+```
 circuit_breaker:
   enabled: true
   failure_threshold: 5
@@ -230,46 +509,117 @@ docker run -d -p 8000:8000 \
 
 ## Testing the Integration
 
-#### Step 1: Check if the mock model is running
+### 1. Verify the mock models are running
 
 ```bash
-curl http://localhost:8003/health
-```
+# Check health of mock-model-1 directly
+curl http://localhost:9001/health | jq
 
-Expected response:
-```json
-{"status":"ok","model":"mock-model-1","version":"1.0.0"}
-```
-
-#### Step 2: Check if the orchestrator can see the model
-
-```bash
-curl http://localhost:8000/api/v1/models
-```
-
-#### Step 3: Send a request to the model through the orchestrator
-
-```bash
-curl -X POST http://localhost:8000/api/v1/models/mock-model-1 \
+# Make a prediction through mock-model-1 directly
+curl -X POST http://localhost:9001/predict \
   -H "Content-Type: application/json" \
-  -d '{"input": "test input"}'
+  -d '{"input": "test input"}' | jq
+
+# Check health of mock-model-2 directly
+curl http://localhost:9002/health | jq
 ```
 
-**Important**: The mock model expects a JSON payload with a key `input`, not `data`. Using `{"data": ...}` will cause a validation error.
+### 2. Verify the orchestrator can reach the mock models
+
+```bash
+# Check orchestrator health
+curl http://localhost:8000/health | jq
+
+# Check detailed health
+curl http://localhost:8000/health/details | jq
+
+# Check health of mock-model-1 through orchestrator
+curl http://localhost:8000/health/models/mock-model-1 | jq
+
+# Check health of mock-model-2 through orchestrator
+curl http://localhost:8000/health/models/mock-model-2 | jq
+```
+
+## Making Predictions
+
+### 1. Make a prediction through the orchestrator
+
+```bash
+# Using mock-model-1
+curl -X POST "http://localhost:8000/api/v1/orchestrator/models/mock-model-1" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "test prediction"}' | jq
+
+# Using mock-model-2
+curl -X POST "http://localhost:8000/api/v1/orchestrator/models/mock-model-2" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "another test prediction"}' | jq
+```
+
+### 2. Example Response
+
+```json
+{
+  "status_code": 200,
+  "content": {
+    "output": "Processed by mock-model-1: test prediction",
+    "model": "mock-model-1"
+  },
+  "headers": {
+    "date": "Sun, 25 May 2025 14:29:28 GMT",
+    "server": "uvicorn",
+    "content-length": "78",
+    "content-type": "application/json"
+  }
+}
+```
 
 ## Troubleshooting
 
-### Network Issues
+### 1. Model not reachable
+   - Verify the model service is running:
+     ```bash
+     docker ps | grep mock-model
+     ```
+   - Check the port mapping if using Docker
+   - Verify network connectivity between services
+   - Check if the orchestrator can reach the model:
+     ```bash
+     docker exec orchestrator sh -c "curl -v http://host.docker.internal:9001/health"
+     ```
 
-If the orchestrator can't connect to the mock models, check:
+### 2. Health check failures
+   - Check the model's health endpoint directly:
+     ```bash
+     curl -v http://localhost:9001/health
+     ```
+   - Verify the health check configuration matches the model's implementation
+   - Check the orchestrator logs for errors:
+     ```bash
+     docker logs orchestrator
+     ```
 
-1. The models are running and accessible on the expected ports
-2. The endpoint URLs in the configuration files are correct
-3. There are no firewall rules blocking the connections
+### 3. Prediction errors
+   - Check the model's logs for errors
+   - Verify the input format matches what the model expects
+   - Ensure you're using the correct endpoint:
+     - For predictions: `POST /api/v1/orchestrator/models/{model_id}`
+     - Not: `POST /api/v1/orchestrator/models/{model_id}/predict`
 
-### Configuration Issues
+### 4. Common Issues
+   - **404 Not Found**: Verify the model ID is correct and registered
+   - **500 Internal Server Error**: Check the orchestrator logs for details
+   - **Connection refused**: Ensure the model service is running and accessible
 
-If the models don't appear in the orchestrator:
+### 5. Viewing Logs
+   - View orchestrator logs:
+     ```bash
+     docker logs orchestrator
+     ```
+   - View mock model logs:
+     ```bash
+     docker logs mock-model-1
+     docker logs mock-model-2
 
 1. Verify the configuration files are in the correct location
 2. Check the orchestrator logs for any errors loading the configurations
@@ -307,3 +657,75 @@ docker run -d \
 ```
 
 Then create another configuration file `config/local/models/mock-model-2.yaml` with the appropriate endpoint URL.
+
+## Using the Automated Mock Model Generator
+
+For convenience, we provide a script that automates the creation of mock models. This script generates all the necessary files for a mock model, including the server code, Dockerfile, docker-compose.yml, and configuration files.
+
+### Prerequisites
+
+- Python 3.6+
+- Git repository cloned locally
+
+### Usage
+
+```bash
+# Make the script executable if it isn't already
+chmod +x scripts/create_mock_model.py
+
+# Basic usage (creates mock-model-1 on port 8003)
+scripts/create_mock_model.py
+
+# Create a specific mock model
+scripts/create_mock_model.py --name custom-model --port 8010 --version 2.0.0
+
+# Specify an output directory
+scripts/create_mock_model.py --output-dir /path/to/custom/directory
+```
+
+### What the Script Creates
+
+The script creates a complete mock model setup with the following files:
+
+```
+mock-models/mock-model-1/
+├── Dockerfile                      # For containerizing the mock model
+├── config/                        # Configuration directory
+│   └── local/
+│       └── models/
+│           ├── mock-model-1.yaml       # For localhost access
+│           └── mock-model-1-docker.yaml # For container-to-container access
+├── docker-compose.yml             # For easy deployment with Docker Compose
+├── model_server.py                # The FastAPI application
+├── requirements.txt               # Dependencies needed
+└── run.sh                         # Script to run directly with Python
+```
+
+### Running the Generated Mock Model
+
+#### With Docker Compose
+
+```bash
+cd mock-models/mock-model-1
+docker-compose up -d
+```
+
+#### With Python Directly
+
+```bash
+cd mock-models/mock-model-1
+./run.sh
+```
+
+### Using the Generated Configuration Files
+
+The script generates two configuration files:
+
+1. `mock-model-1.yaml` - For when the orchestrator is running on the host
+2. `mock-model-1-docker.yaml` - For when both are running in Docker containers
+
+Copy the appropriate configuration file to your orchestrator's configuration directory:
+
+```bash
+cp mock-models/mock-model-1/config/local/models/mock-model-1.yaml /path/to/orchestrator/config/local/models/
+```

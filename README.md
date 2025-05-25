@@ -8,9 +8,11 @@ A high-performance, production-ready FastAPI service for orchestrating and manag
 
 - **Model Agnostic**: Support for any ML model with a REST API
 - **Dynamic Model Registration**: Register and unregister models at runtime
-- **Health Monitoring**: Built-in health checks and circuit breakers
+- **Health Monitoring**: Built-in health checks with detailed system and model status
+- **Metrics Collection**: System and model-level metrics via API endpoints
 - **Circuit Breakers**: Intelligent circuit breaking with configurable thresholds and timeouts
 - **Error Handling**: Comprehensive error handling with retry mechanisms and fallback strategies
+- **Logging**: Structured JSON logging with configurable levels and sensitive data masking
 - **Testing**: Comprehensive test suite with 90%+ code coverage
 - **API Documentation**: Full OpenAPI/Swagger documentation
 - **Containerized**: Ready for Docker and Kubernetes deployment
@@ -85,10 +87,10 @@ uvicorn app.main:app --reload
    ```bash
    # Run all tests
    pytest
-   
+
    # Run tests with coverage
    pytest --cov=app --cov-report=term-missing
-   
+
    # Run a specific test file
    pytest tests/test_core/test_orchestrator.py -v
    ```
@@ -182,6 +184,64 @@ curl -X 'GET' \
 
 **Note**: The mock models expect a JSON payload with a key `input` (e.g., `{"input": "some_string"}`). Using a different format like `{"data": ...}` will cause a validation error.
 
+## 📊 Monitoring and Metrics
+
+The ML Service Orchestrator provides comprehensive monitoring capabilities:
+
+### System Metrics
+
+- **Model Statistics**: Number of loaded models, active models
+- **Resource Usage**: HTTP client connections, error handlers
+- **Performance Metrics**: Request latencies, success/failure rates
+
+### Health Checks
+
+- **Endpoint**: `GET /health`
+- **Response**:
+  ```json
+  {
+    "status": "healthy",
+    "version": "1.0.0",
+    "timestamp": "2024-05-26T02:30:00Z",
+    "components": {
+      "database": {"status": "healthy"},
+      "model_registry": {"status": "healthy"}
+    }
+  }
+  ```
+
+### Model Metrics
+
+- **Endpoint**: `GET /metrics`
+- **Response**:
+  ```json
+  {
+    "system": {
+      "models_loaded": 3,
+      "active_models": ["model-1", "model-2"],
+      "http_clients": 2,
+      "error_handlers": 2
+    },
+    "models": {
+      "model-1": {
+        "active": true,
+        "endpoint": "http://model-1:8000",
+        "timeout": 30.0,
+        "max_retries": 3,
+        "has_error_handler": true,
+        "has_http_client": true
+      }
+    }
+  }
+  ```
+
+### Logging
+
+- **Structured JSON** logging by default
+- Configurable log levels (DEBUG, INFO, WARNING, ERROR)
+- Automatic masking of sensitive fields (API keys, tokens, etc.)
+- Request/response metadata included in logs
+
 ## ⚙️ Configuration
 
 ### Model Registration
@@ -199,14 +259,14 @@ Models can be registered in multiple ways:
      endpoint_url: http://mock-model-1:8000
      active: true
      timeout: 30.0
-     
+
      # Circuit breaker configuration
      circuit_breaker:
        failure_threshold: 5
        reset_timeout: 60
        half_open_timeout: 30
        success_threshold: 2
-     
+
      # Health check configuration
      health_check:
        endpoint: /health
@@ -621,7 +681,35 @@ docker compose down
 
 ## Development
 
-### Adding New Models
+### Monitoring Development
+
+To add custom metrics or monitoring:
+
+1. **Add Custom Metrics**:
+   ```python
+   # In your service class
+   from prometheus_client import Counter, Gauge
+   
+   REQUESTS_TOTAL = Counter('myapp_requests_total', 'Total requests')
+   ACTIVE_USERS = Gauge('myapp_active_users', 'Number of active users')
+   
+   # In your endpoint
+   @app.get("/my-endpoint")
+   def my_endpoint():
+       REQUESTS_TOTAL.inc()
+       ACTIVE_USERS.set(42)
+       return {"status": "ok"}
+   ```
+
+2. **Enable Prometheus Metrics** (if using Prometheus):
+   ```python
+   from prometheus_fastapi_instrumentator import Instrumentator
+   
+   app = FastAPI()
+   Instrumentator().instrument(app).expose(app)
+   ```
+
+### Code Style and Quality
 
 1. Create a new model configuration file in the environment-specific directory (e.g., `config/local/models/`)
 2. Configure the LLM provider and error handling settings

@@ -37,14 +37,14 @@ read -p "\nDo you want to export the image as a tar file for sharing? (y/n): " E
 if [[ "$EXPORT_IMAGE" =~ ^[Yy]$ ]]; then
     # Ensure the distribution directory exists
     mkdir -p ${DIST_DIR}
-    
+
     echo "\nExporting image to ${TAR_NAME}..."
     docker save -o ${TAR_NAME} ${IMAGE_NAME}:${IMAGE_VERSION}
-    
+
     # Compress the tar file
     echo "Compressing image..."
     gzip ${TAR_NAME}
-    
+
     echo "\nImage exported and compressed successfully to ${TAR_NAME}.gz"
     echo "File size: $(du -h ${TAR_NAME}.gz | cut -f1)"
     echo "\nTo share this image with others, provide them with the ${TAR_NAME}.gz file."

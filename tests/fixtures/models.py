@@ -4,12 +4,7 @@ from typing import Dict, List, Optional
 
 import pytest
 
-from app.models.config_models import (
-    ErrorHandlingConfig,
-    ModelConfig,
-    PlatformConfig,
-    RequestConfig,
-)
+from app.models.config_models import ErrorHandlingConfig, ModelConfig, PlatformConfig, RequestConfig
 
 
 def create_model_config(
@@ -21,7 +16,7 @@ def create_model_config(
     max_retries: int = 3,
 ) -> ModelConfig:
     """Factory function to create model configs with different parameters.
-    
+
     Args:
         model_id: Unique identifier for the model
         name: Display name of the model
@@ -29,7 +24,7 @@ def create_model_config(
         active: Whether the model is active
         timeout: Request timeout in seconds
         max_retries: Maximum number of retry attempts
-        
+
     Returns:
         A configured ModelConfig instance
     """
@@ -96,7 +91,7 @@ def create_model_config(
 @pytest.fixture(scope="function")
 def model_config_instance() -> ModelConfig:
     """Create a sample model configuration for testing.
-    
+
     Returns:
         A standard model configuration for testing
     """
@@ -106,7 +101,7 @@ def model_config_instance() -> ModelConfig:
 @pytest.fixture(scope="function")
 def inactive_model_config() -> ModelConfig:
     """Create an inactive model configuration for testing.
-    
+
     Returns:
         An inactive model configuration
     """
@@ -116,10 +111,10 @@ def inactive_model_config() -> ModelConfig:
 @pytest.fixture(scope="function")
 def model_configs(model_config_instance: ModelConfig) -> Dict[str, ModelConfig]:
     """Create a dictionary of model configurations for testing.
-    
+
     Args:
         model_config_instance: The base model configuration
-        
+
     Returns:
         A dictionary mapping model IDs to their configurations
     """
@@ -129,12 +124,16 @@ def model_configs(model_config_instance: ModelConfig) -> Dict[str, ModelConfig]:
 @pytest.fixture(scope="function")
 def multiple_model_configs() -> Dict[str, ModelConfig]:
     """Create multiple model configurations for testing.
-    
+
     Returns:
         A dictionary with multiple model configurations
     """
     return {
-        "model1": create_model_config(model_id="model1", endpoint_url="http://localhost:8001/predict"),
-        "model2": create_model_config(model_id="model2", endpoint_url="http://localhost:8002/predict"),
+        "model1": create_model_config(
+            model_id="model1", endpoint_url="http://localhost:8001/predict"
+        ),
+        "model2": create_model_config(
+            model_id="model2", endpoint_url="http://localhost:8002/predict"
+        ),
         "inactive_model": create_model_config(model_id="inactive_model", active=False),
     }

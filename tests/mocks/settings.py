@@ -1,6 +1,5 @@
 """Mock settings for tests."""
 
-
 from pydantic_settings import SettingsConfigDict
 
 from app.config.settings import BaseAppSettings

@@ -9,12 +9,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 
 from app.core.exceptions import ModelAlreadyExistsError
-from app.models.config_models import (
-    LLMProviderConfig,
-    ModelConfig,
-    ModelRegistry,
-    PlatformConfig,
-)
+from app.models.config_models import LLMProviderConfig, ModelConfig, ModelRegistry, PlatformConfig
 from app.services.model_registry import (
     ModelRegistryService,
     get_model_registry_service,

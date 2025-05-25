@@ -54,7 +54,7 @@ def test_admin_list_models(mock_list_models, client: TestClient):
     mock_list_models.return_value = [model_1, model_2]
 
     # Make request
-    response = client.get("/admin/models", headers=headers)
+    response = client.get("/admin/manage/models", headers=headers)
 
     # Verify response
     assert response.status_code == 200
@@ -75,7 +75,7 @@ def test_admin_reload_configs(mock_reload, client: TestClient):
     mock_reload.return_value = {"model_1": MagicMock(), "model_2": MagicMock()}
 
     # Make request
-    response = client.post("/admin/reload", headers=headers)
+    response = client.post("/admin/manage/reload", headers=headers)
 
     # Verify response
     assert response.status_code == 200

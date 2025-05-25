@@ -216,32 +216,38 @@ async def test_proxy_request_success(
     mock_response = {
         "status_code": 200,
         "content": {"result": "success"},
-        "headers": {"Content-Type": "application/json"}
+        "headers": {"Content-Type": "application/json"},
     }
-    
+
     # Create a mock circuit breaker with CLOSED state
     mock_circuit_breaker = MagicMock()
     mock_circuit_breaker.state = "closed"  # Ensure the circuit breaker is closed
     mock_circuit_breaker.model_id = mock_model_config.id
-    
+
     # Configure execute_async to actually execute the function and return its result
     async def execute_async_side_effect(func):
         return await func()
-    
+
     mock_circuit_breaker.execute_async = AsyncMock(side_effect=execute_async_side_effect)
-    
+
     # Mock the HTTP client to return the mock response
     mock_http_client.request = AsyncMock(return_value=mock_response)
-    
+
     # Mock the error handler to return the response content
     mock_error_handler = MagicMock()
     mock_error_handler.process_response = AsyncMock(return_value=mock_response["content"])
 
     # Mock the circuit breaker and HTTP client methods
     with (
-        patch.object(orchestrator, "_get_http_client", return_value=mock_http_client) as mock_get_client,
-        patch.object(orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker) as mock_get_cb,
-        patch.object(orchestrator, "_get_error_handler", return_value=mock_error_handler) as mock_get_error_handler,
+        patch.object(
+            orchestrator, "_get_http_client", return_value=mock_http_client
+        ) as mock_get_client,
+        patch.object(
+            orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker
+        ) as mock_get_cb,
+        patch.object(
+            orchestrator, "_get_error_handler", return_value=mock_error_handler
+        ) as mock_get_error_handler,
     ):
         # Call the method under test
         response = await orchestrator.proxy_request(
@@ -262,8 +268,9 @@ async def test_proxy_request_success(
         assert call_args["headers"] == {"Content-Type": "application/json"}
         assert call_args["params"] == {"param": "value"}
         # Check for either 'json' or 'data' key in the request arguments
-        assert ("json" in call_args and call_args["json"] == {"input": "test"}) or \
-               ("data" in call_args and call_args["data"] == b'{"input": "test"}')
+        assert ("json" in call_args and call_args["json"] == {"input": "test"}) or (
+            "data" in call_args and call_args["data"] == b'{"input": "test"}'
+        )
         assert call_args["timeout"] == 30.0
 
         # Verify the response is as expected
@@ -282,9 +289,7 @@ async def test_proxy_request_success(
 
 
 @pytest.mark.asyncio
-async def test_proxy_request_error(
-    orchestrator, mock_http_client, mock_model_config, mock_request
-):
+async def test_proxy_request_error(orchestrator, mock_http_client, mock_model_config, mock_request):
     """Test handling errors in proxied request execution."""
     # Setup test data
     error_message = "Error from model"
@@ -307,22 +312,26 @@ async def test_proxy_request_error(
     mock_circuit_breaker = MagicMock()
     mock_circuit_breaker.state = "closed"
     mock_circuit_breaker.model_id = mock_model_config.id
-    
+
     # Configure execute_async to raise an exception
     async def execute_async_side_effect(func):
         raise ModelRequestError(
-            message=error_message,
-            status_code=500,
-            model_id=mock_model_config.id
+            message=error_message, status_code=500, model_id=mock_model_config.id
         )
-    
+
     mock_circuit_breaker.execute_async = AsyncMock(side_effect=execute_async_side_effect)
 
     # Mock the circuit breaker and HTTP client methods
     with (
-        patch.object(orchestrator, "_get_http_client", return_value=mock_http_client) as mock_get_client,
-        patch.object(orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker) as mock_get_cb,
-        patch.object(orchestrator, "_get_error_handler", return_value=MagicMock()) as mock_get_error_handler,
+        patch.object(
+            orchestrator, "_get_http_client", return_value=mock_http_client
+        ) as mock_get_client,
+        patch.object(
+            orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker
+        ) as mock_get_cb,
+        patch.object(
+            orchestrator, "_get_error_handler", return_value=MagicMock()
+        ) as mock_get_error_handler,
     ):
         # Call the method under test and expect a ModelRequestError
         with pytest.raises(ModelRequestError) as exc_info:
@@ -334,7 +343,7 @@ async def test_proxy_request_error(
         # HTTP client should not be called since we're raising an error in execute_async
         mock_get_client.assert_not_called()
         mock_http_client.request.assert_not_called()
-        
+
         # Verify error details
         assert error_message in str(exc_info.value)
         assert exc_info.value.status_code == 500
@@ -386,55 +395,57 @@ async def test_proxy_request_circuit_breaker_open(
     mock_circuit_breaker.state = "open"
     mock_circuit_breaker.last_failure = 0
     mock_circuit_breaker.failure_count = 10
-    mock_circuit_breaker.model_id = mock_model_config.id  # Add model_id to match actual circuit breaker
-    
+    mock_circuit_breaker.model_id = (
+        mock_model_config.id
+    )  # Add model_id to match actual circuit breaker
+
     # Mock the circuit breaker's execute_async method to raise a CircuitBreakerError
     # This simulates what happens when the circuit breaker is open
     async def mock_execute_async(func):
-        raise CircuitBreakerError(
-            "Circuit breaker is open",
-            model_id=mock_model_config.id
-        )
-    
+        raise CircuitBreakerError("Circuit breaker is open", model_id=mock_model_config.id)
+
     # Mock the request object
     mock_request.method = "POST"
     mock_request.headers = {"Content-Type": "application/json"}
     mock_request.query_params = {}
     mock_request.json = AsyncMock(return_value={"input": "test"})
     mock_request.body = AsyncMock(return_value=b'{"input": "test"}')
-    
+
     # Mock the error handler to pass through the error
     mock_error_handler = MagicMock()
     mock_error_handler.process_response = AsyncMock(side_effect=lambda x: x)
-    
+
     # Configure the circuit breaker's execute_async method
     mock_circuit_breaker.execute_async = mock_execute_async
 
     # Mock the circuit breaker and HTTP client methods
     with (
-        patch.object(orchestrator, "_get_http_client", return_value=mock_http_client) as mock_get_client,
-        patch.object(orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker) as mock_get_cb,
-        patch.object(orchestrator, "_get_error_handler", return_value=mock_error_handler) as mock_get_error_handler,
+        patch.object(
+            orchestrator, "_get_http_client", return_value=mock_http_client
+        ) as mock_get_client,
+        patch.object(
+            orchestrator, "get_circuit_breaker", return_value=mock_circuit_breaker
+        ) as mock_get_cb,
+        patch.object(
+            orchestrator, "_get_error_handler", return_value=mock_error_handler
+        ) as mock_get_error_handler,
     ):
         # Call the method under test and expect a ModelRequestError
         with pytest.raises(ModelRequestError) as exc_info:
-            await orchestrator.proxy_request(
-                mock_model_config, 
-                mock_request, 
-                path_suffix="predict"
-            )
-        
+            await orchestrator.proxy_request(mock_model_config, mock_request, path_suffix="predict")
+
         # The HTTP client and its getter should not be called when circuit is open
         mock_get_client.assert_not_called()
         mock_http_client.request.assert_not_called()
-        
+
         # Verify the error message indicates the circuit is open
         assert "Failed to proxy request to model" in str(exc_info.value)
         assert "Circuit breaker is open" in str(exc_info.value)
-        assert hasattr(exc_info.value, 'model_id')
+        assert hasattr(exc_info.value, "model_id")
         assert exc_info.value.model_id == mock_model_config.id
-        assert hasattr(exc_info.value, 'status_code')
+        assert hasattr(exc_info.value, "status_code")
         assert exc_info.value.status_code == 500
+
 
 # The following test is commented out because CircuitBreakerListener is not implemented
 # def test_circuit_breaker_listener():

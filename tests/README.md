@@ -25,7 +25,7 @@ tests/
 ### 1. Test Coverage Requirements
 
 - **Overall Target**: 80% or higher code coverage
-- **Module Targets**: 
+- **Module Targets**:
   - Critical modules: 90%+ (orchestrator, proxy service, etc.)
   - General modules: 80%+
   - Infrastructure/config: 60%+
@@ -155,7 +155,7 @@ async def async_client(app):
 
 ## Troubleshooting Common Issues
 
-1. **Async Test Failures**: 
+1. **Async Test Failures**:
    - Ensure proper use of `pytest.mark.asyncio`
    - Use `AsyncMock` for mocking async functions
    - Properly await async functions

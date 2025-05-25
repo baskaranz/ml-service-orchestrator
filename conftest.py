@@ -21,6 +21,7 @@ if "APP_ENV" not in os.environ:
 project_root = Path(__file__).resolve().absolute().parent
 sys.path.insert(0, str(project_root))
 
+
 # Print debug information when running with pytest -v
 def pytest_configure(config):
     """Configure pytest with custom markers and settings."""
@@ -28,7 +29,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "unit: mark a test as a unit test")
     config.addinivalue_line("markers", "integration: mark a test as an integration test")
     config.addinivalue_line("markers", "slow: mark a test as slow-running")
-    
+
     # Print environment information in verbose mode
     if config.option.verbose > 0:
         print(f"\nTest Environment: {os.environ.get('APP_ENV', 'not set')}")

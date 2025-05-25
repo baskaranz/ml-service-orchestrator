@@ -10,8 +10,8 @@ from app.config.settings import settings
 # Create the main API router
 api_router = APIRouter()
 
-# Include health routers
-api_router.include_router(health.router)
+# Include health router under /api/v1/health
+api_router.include_router(health.router, prefix="/api/v1/health", tags=["health"])
 
 # Include models router under /api/v1/models
 api_router.include_router(models.router, prefix="/api/v1/models", tags=["models"])

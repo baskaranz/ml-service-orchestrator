@@ -1,0 +1,27 @@
+id: new-model-1
+name: New Model 1
+endpoint_url: http://host.docker.internal:8001
+active: true
+timeout: 30.0
+max_retries: 3
+health_check:
+  enabled: true
+  endpoint: /health
+  interval: 30
+  timeout: 5
+  failure_threshold: 3
+  success_threshold: 2
+headers:
+  Content-Type: application/json
+max_connections: 100
+max_keepalive_connections: 50
+keepalive_timeout: 60
+pool_connections: 10
+pool_maxsize: 100
+http2: false
+platform: {}
+auth:
+  enabled: false
+  type: api_key
+  header_name: X-API-Key
+  api_key: ${API_KEY}

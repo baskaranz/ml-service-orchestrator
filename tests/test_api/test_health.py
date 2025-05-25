@@ -14,7 +14,7 @@ def safe_dict(val):
 
 def test_basic_health_check(client: TestClient):
     """Test the basic health check endpoint."""
-    response = client.get("/health")
+    response = client.get("/api/v1/health/")
     assert response.status_code == 200
     data = response.json()
     # The status should be one of the HealthStatus enum values (uppercase)
@@ -29,11 +29,12 @@ def test_detailed_health_check(mock_list_models, client: TestClient, mock_settin
     """Test the detailed health check endpoint."""
     # Return a list of mock models
     mock_model = MagicMock()
-    mock_model.id = "test_model_1"
-    mock_model.name = "Test Model 1"
+    mock_model.id = "test-model"
+    mock_model.name = "Test Model"
     mock_model.active = True
     mock_list_models.return_value = [mock_model]
-    response = client.get("/health/details")
+
+    response = client.get("/api/v1/health/details")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] in ["OK", "WARNING", "ERROR"]

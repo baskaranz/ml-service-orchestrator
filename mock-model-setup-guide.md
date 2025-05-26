@@ -6,16 +6,194 @@ This guide explains how to create, configure, and test mock models for the ML Se
 
 1. [Prerequisites](#prerequisites)
 2. [Cleanup Existing Containers](#cleanup-existing-containers)
-3. [Setting Up Mock Model Services](#setting-up-mock-model-services)
+3. [End-to-End Mock Example](#end-to-end-mock-example)
+4. [Setting Up Mock Model Services](#setting-up-mock-model-services)
    - [Using Docker (Recommended)](#option-1-using-docker-recommended)
    - [Running Directly with Python](#option-2-running-directly-with-python)
-4. [Testing API Endpoints](#testing-api-endpoints)
+5. [Testing API Endpoints](#testing-api-endpoints)
    - [Model Management](#model-management)
    - [Health Checks](#health-checks)
    - [Making Predictions](#making-predictions)
    - [Admin Endpoints](#admin-endpoints)
-4. [Troubleshooting](#troubleshooting)
-5. [Cleanup](#cleanup)
+6. [Troubleshooting](#troubleshooting)
+7. [Cleanup](#cleanup)
+
+## End-to-End Mock Example
+
+This section provides a complete example of setting up and testing mock models with the ML Service Orchestrator in the correct sequence.
+
+### Prerequisites
+
+- Docker and Docker Compose installed
+- Python 3.8+
+- `curl` or similar HTTP client
+
+### 1. Clean Up Existing Containers
+
+Before starting, ensure you have a clean environment:
+
+```bash
+# Stop and remove any existing containers
+docker-compose down
+
+# Remove any existing images
+docker rmi ml-orchestrator lasso-mock-model-1 lasso-mock-model-2 || true
+```
+
+### 2. Prepare Model Configurations
+
+Ensure you have the following minimal configurations in `config/local/models/`:
+
+### 2. Create Docker Network
+
+First, create a Docker network to allow the containers to communicate with each other:
+
+```bash
+docker network create ml-network
+```
+
+### 3. Prepare Model Configurations
+
+Ensure you have the following minimal configurations in `config/local/models/`:
+
+#### `config/local/models/mock-model-1.yaml`
+```yaml
+id: mock-model-1
+name: mock-model-1
+description: Mock Model 1 for testing
+endpoint_url: http://mock-model-1:8000
+active: true
+```
+
+#### `config/local/models/mock-model-2.yaml`
+```yaml
+id: mock-model-2
+name: mock-model-2
+description: Mock Model 2 for testing
+endpoint_url: http://mock-model-2:8000
+active: true
+```
+
+### 3. Build and Save the Orchestrator Image
+
+Build the orchestrator image and save it as a tar file:
+
+```bash
+# Build the Docker image
+docker build -t ml-orchestrator -f Dockerfile .
+
+# Save the image to a tar file
+docker save ml-orchestrator -o ml-orchestrator.tar
+```
+
+### 5. Load and Run the Orchestrator Container
+
+Load the saved image and run the orchestrator container in local mode, connected to the ml-network:
+
+```bash
+# Load the image from tar file
+docker load -i ml-orchestrator.tar
+
+# Run the orchestrator container
+docker run -d --name orchestrator \
+  --network ml-network \
+  -p 8000:8000 \
+  -v $(pwd)/config:/app/config \
+  -e APP_ENV=local \
+  ml-orchestrator
+```
+
+### 6. Build and Start Mock Models
+
+Build and start the mock model containers, connected to the same network:
+
+```bash
+# Build mock model images
+docker build -t lasso-mock-model-1 -f mock-model/Dockerfile mock-model/
+docker build -t lasso-mock-model-2 -f mock-model/Dockerfile mock-model/
+
+# Start mock model 1
+docker run -d --name mock-model-1 \
+  --network ml-network \
+  -e PORT=8000 \
+  -e MODEL_NAME=mock-model-1 \
+  -e MODEL_VERSION=1.0.0 \
+  lasso-mock-model-1
+
+# Start mock model 2
+docker run -d --name mock-model-2 \
+  --network ml-network \
+  -e PORT=8000 \
+  -e MODEL_NAME=mock-model-2 \
+  -e MODEL_VERSION=1.0.0 \
+  lasso-mock-model-2
+```
+
+### 6. Verify Services
+
+Check that all services are running:
+
+```bash
+docker ps
+```
+
+### 7. Test the Setup
+
+#### Check Orchestrator Health
+```bash
+curl -s http://localhost:8000/api/v1/health/ | jq
+```
+
+#### List Registered Models
+```bash
+curl -s http://localhost:8000/api/v1/orchestrator/models | jq
+```
+
+#### Make Predictions
+```bash
+# Test mock-model-1
+curl -X POST http://localhost:8000/api/v1/orchestrator/models/mock-model-1 \
+  -H "Content-Type: application/json" \
+  -d '{"input": [1, 2, 3]}' | jq
+
+# Test mock-model-2
+curl -X POST http://localhost:8000/api/v1/orchestrator/models/mock-model-2 \
+  -H "Content-Type: application/json" \
+  -d '{"input": [4, 5, 6]}' | jq
+```
+
+### Troubleshooting
+
+If you encounter issues:
+
+1. Check the logs for the orchestrator:
+   ```bash
+   docker logs orchestrator
+   ```
+
+2. Check the logs for a specific model:
+   ```bash
+   docker logs mock-model-1
+   ```
+
+3. Verify a model is responding directly (from within the ml-network):
+   ```bash
+   # Check mock-model-1
+   docker exec -it mock-model-1 curl -s http://localhost:8000/health | jq
+
+   # Check mock-model-2
+   docker exec -it mock-model-2 curl -s http://localhost:8000/health | jq
+   ```
+
+### Cleanup
+
+When you're done, clean up all resources:
+
+```bash
+docker stop orchestrator mock-model-1 mock-model-2
+docker rm orchestrator mock-model-1 mock-model-2
+docker rmi ml-orchestrator lasso-mock-model-1 lasso-mock-model-2
+```
 
 ## Setting Up Mock Model Services
 

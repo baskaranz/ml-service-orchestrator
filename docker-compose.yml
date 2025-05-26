@@ -1,43 +1,78 @@
 version: "3.8"
 
-# Environment variables are now defined directly in each service
-
 services:
-  # Main orchestrator service
   orchestrator:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${ORCHESTRATOR_PORT:-8000}:8000"
+      - "8000:8000"
     environment:
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - LOG_LEVEL=DEBUG
       - PYTHONUNBUFFERED=1
-      - APP_ENV=local
       - PORT=8000
-      - APP_NAME=orchestrator
-      - APP_VERSION=1.0.0
-      - DEBUG=true
       - HOST=0.0.0.0
       - WORKERS=1
-      - CONFIG_DIR=/app/config/local
-      - MODELS_DIR=/app/config/local/models
+      - ENVIRONMENT=local
       - APP_SETTINGS=config.local.DevelopmentConfig
+      - MODEL_CONFIG_DIR=/app/config/local/models
+      - CONFIG_DIR=/app/config/local
     volumes:
-      - ./config/local:/app/config/local
-      - ./logs:/app/logs
+      - .:/app
+      - /app/__pycache__
+    depends_on:
+      mock-model-1:
+        condition: service_healthy
+      mock-model-2:
+        condition: service_healthy
+    networks:
+      - ml-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    restart: unless-stopped
+      start_period: 10s
+
+  mock-model-1:
+    build:
+      context: ./mocks
+      dockerfile: Dockerfile.mock
+    environment:
+      - PORT=9001
+      - MODEL_NAME=mock-model-1
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./mocks:/app
     networks:
       - ml-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9001/health | grep -q 'healthy' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
-  # Mock models are now defined in mocks/docker-compose.yml
-  # and started separately to avoid port conflicts
+  mock-model-2:
+    build:
+      context: ./mocks
+      dockerfile: Dockerfile.mock
+    environment:
+      - PORT=9002
+      - MODEL_NAME=mock-model-2
+    ports:
+      - "9002:9002"
+    volumes:
+      - ./mocks:/app
+    networks:
+      - ml-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9002/health | grep -q 'healthy' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
 networks:
   ml-network:

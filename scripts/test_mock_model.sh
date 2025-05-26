@@ -114,4 +114,3 @@ curl -X POST http://localhost:$PORT/predict \
 
 echo -e "\n\n${YELLOW}To stop the model, run: docker stop $MODEL_NAME && docker rm $MODEL_NAME${NC}"
 echo -e "${YELLOW}Configuration file: $CONFIG_FILE${NC}"
-

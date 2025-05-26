@@ -689,10 +689,10 @@ To add custom metrics or monitoring:
    ```python
    # In your service class
    from prometheus_client import Counter, Gauge
-   
+
    REQUESTS_TOTAL = Counter('myapp_requests_total', 'Total requests')
    ACTIVE_USERS = Gauge('myapp_active_users', 'Number of active users')
-   
+
    # In your endpoint
    @app.get("/my-endpoint")
    def my_endpoint():
@@ -704,7 +704,7 @@ To add custom metrics or monitoring:
 2. **Enable Prometheus Metrics** (if using Prometheus):
    ```python
    from prometheus_fastapi_instrumentator import Instrumentator
-   
+
    app = FastAPI()
    Instrumentator().instrument(app).expose(app)
    ```

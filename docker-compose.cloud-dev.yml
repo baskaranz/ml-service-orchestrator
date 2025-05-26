@@ -1,0 +1,66 @@
+version: "3.8"
+
+# Cloud development environment
+# Use this for development in cloud environments (EC2, ECS, etc.)
+# Start with: docker-compose -f docker-compose.cloud-dev.yml up --build
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+      args:
+        - ENVIRONMENT=dev
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+      - PORT=8000
+      - HOST=0.0.0.0
+      - WORKERS=2
+      - RELOAD=true
+    volumes:
+      - ./app:/app/app
+      - ./config/dev:/app/config/dev
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - ml-network
+
+  # Add any development dependencies here (databases, caches, etc.)
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - ml-network
+
+  # Development database
+  db:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=devpassword
+      - POSTGRES_DB=devdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    networks:
+      - ml-network
+
+networks:
+  ml-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

@@ -13,13 +13,13 @@ This guide provides comprehensive instructions for testing the ML Service Orches
   ```bash
   # On macOS
   brew install jq
-  
+
   # On Ubuntu/Debian
   sudo apt-get install jq
   ```
 
-> **Note:** Before proceeding with end-to-end testing, make sure you have set up your mock models. 
-> Refer to the [Mock Model Setup Guide](../mock-model-setup-guide.md) for detailed instructions on 
+> **Note:** Before proceeding with end-to-end testing, make sure you have set up your mock models.
+> Refer to the [Mock Model Setup Guide](../mock-model-setup-guide.md) for detailed instructions on
 > creating and configuring mock models for testing.
 
 ## 🐳 Docker Testing Environment

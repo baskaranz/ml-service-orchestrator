@@ -39,7 +39,7 @@ platform:
     # Request settings
     timeout: 30  # seconds
     max_retries: 3
-    
+
     # Health check configuration
     health_check:
       enabled: true
@@ -48,7 +48,7 @@ platform:
       timeout: 5    # seconds
       failure_threshold: 3
       success_threshold: 1
-    
+
     # Circuit breaker settings
     circuit_breaker:
       enabled: true
@@ -172,7 +172,7 @@ platform:
     # Request settings
     timeout: 30  # seconds
     max_retries: 3
-    
+
     # Health check configuration
     health_check:
       enabled: true
@@ -181,7 +181,7 @@ platform:
       timeout: 5    # seconds
       failure_threshold: 3
       success_threshold: 1
-    
+
     # Circuit breaker settings
     circuit_breaker:
       enabled: true

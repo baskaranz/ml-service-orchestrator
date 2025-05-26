@@ -85,19 +85,19 @@ config:
   # Required
   timeout: 30  # seconds
   max_retries: 3
-  
+
   # Optional
   health_check:
     endpoint: "/health"  # defaults to "/health"
     interval: 30  # seconds
     timeout: 5  # seconds
     failure_threshold: 3
-  
+
   # Custom headers
   headers:
     Content-Type: "application/json"
     X-Custom-Header: "value"
-  
+
   # Connection pooling
   max_connections: 100
   max_keepalive_connections: 50

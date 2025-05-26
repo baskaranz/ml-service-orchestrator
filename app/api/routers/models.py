@@ -1,14 +1,62 @@
 import logging
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.dependencies.model_registry import get_model_registry
 from app.api.dependencies.orchestrator import get_orchestrator_async as get_orchestrator
+from app.core.config_loader import model_config_loader
+from app.schemas.models import ModelConfig, ModelConfigList
 from app.services.errors import ModelRequestError
 from app.services.model_registry import ModelRegistryService
 
-router = APIRouter()
+router = APIRouter(tags=["models"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/configs", response_model=ModelConfigList)
+async def list_model_configs() -> Dict[str, Any]:
+    """
+    List all available model configurations.
+
+    Returns:
+        Dictionary containing list of model configurations.
+    """
+    try:
+        configs = model_config_loader.get_all_configs()
+        return {"models": list(configs.values())}
+    except Exception as e:
+        logger.error(f"Error listing model configs: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve model configurations",
+        )
+
+
+@router.get("/configs/{model_id}", response_model=ModelConfig)
+async def get_model_config(model_id: str) -> Dict[str, Any]:
+    """
+    Get configuration for a specific model.
+
+    Args:
+        model_id: The ID of the model to get configuration for.
+
+    Returns:
+        Model configuration.
+
+    Raises:
+        HTTPException: If model configuration is not found.
+    """
+    try:
+        return model_config_loader.get_config(model_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting config for model {model_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve configuration for model {model_id}",
+        )
 
 
 @router.post("/{model_id}")
@@ -34,14 +82,13 @@ async def predict(
     try:
         logger.info(f"Received prediction request for model: {model_id}")
 
-        # Get model config
-        model_config = model_registry.get_model_config(model_id)
-        if not model_config:
-            error_msg = f"Model {model_id} not found in registry"
-            logger.error(error_msg)
-            raise HTTPException(status_code=404, detail=error_msg)
-
-        logger.info(f"Retrieved model config for {model_id}: {model_config}")
+        # Get model config from the config loader
+        try:
+            model_config = model_config_loader.get_config(model_id)
+            logger.info(f"Retrieved model config for {model_id}")
+        except HTTPException as e:
+            logger.error(f"Model {model_id} not found in configurations: {str(e)}")
+            raise
 
         # Get the orchestrator instance asynchronously
         logger.debug("Getting orchestrator instance")

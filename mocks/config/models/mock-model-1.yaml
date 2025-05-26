@@ -1,0 +1,6 @@
+active: true
+description: Mock model for testing
+endpoint_url: http://mock-model-1:9001
+id: mock-model-1
+name: mock-model-1
+version: 1.0.0

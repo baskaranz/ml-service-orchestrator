@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException
+import logging
+import os
+import random
+
+import uvicorn
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uvicorn
-import os
-import logging
 
 app = FastAPI()
 
@@ -20,34 +22,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     model: str
     version: str
 
+
 class PredictionRequest(BaseModel):
-    input: str
+    inputs: dict
+
 
 class PredictionResponse(BaseModel):
-    output: str
+    outputs: dict
     model: str
+    version: str
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
+    """Health check endpoint for the model service."""
     return {
         "status": "ok",
         "model": os.getenv("MODEL_NAME", "mock-model"),
-        "version": os.getenv("MODEL_VERSION", "1.0.0")
+        "version": os.getenv("MODEL_VERSION", "1.0.0"),
     }
 
-@app.post("/predict", response_model=PredictionResponse)
+
+@app.post("/predict")
 async def predict(request: PredictionRequest):
+    """Generate mock predictions based on input data."""
+    model_name = os.getenv("MODEL_NAME", "mock-model")
+    model_version = os.getenv("MODEL_VERSION", "1.0.0")
+
+    # Generate mock predictions based on input
+    if isinstance(request.inputs, dict) and "data" in request.inputs:
+        predictions = [round(random.random(), 4) for _ in request.inputs["data"]]
+    else:
+        # Default to 3 random predictions
+        predictions = [round(random.random(), 4) for _ in range(3)]
+
     return {
-        "output": f"Processed by {os.getenv('MODEL_NAME')}: {request.input}",
-        "model": os.getenv("MODEL_NAME", "mock-model")
+        "outputs": {"predictions": predictions, "confidence": 0.95},
+        "model": model_name,
+        "version": model_version,
     }
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    logger.info(f"Starting mock model server on port {port}")
+    model_name = os.getenv("MODEL_NAME", "mock-model")
+    logger.info(f"Starting {model_name} server on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
